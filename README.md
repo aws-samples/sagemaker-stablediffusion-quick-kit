@@ -11,7 +11,7 @@ SageMaker Stable Diffusion Quick Kit  is a assets for help our customer to dpelo
 
 * Lambda script (inference api)
 
-* A simple UI (temporay name: PingAI.UI )
+* A simple UI (temporary name: PingAI )
 
 * SageMaker BYOC Dockerfile
 
