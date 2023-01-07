@@ -1,11 +1,33 @@
-## My Project
+## SageMaker Stable Diffusion Quick Kit
 
-TODO: Fill this README out!
+SageMaker Stable Diffusion Quick Kit  is a assets for help our customer to dpeloy stable diffusion model on Amazon Sagemaker and Amazon EKS .
 
-Be sure to:
+**This project  include :** 
 
-* Change the title in this README
-* Edit your repository description on GitHub
+* Huggingface diffusers (StableDiffusionPipeline) migrate to Sagemaker Endpoint 
+* Origin Stable diffusion model(ckpt) migrate to SageMaker Endpoint 
+
+* Dreambooth fine tuning  migrate to Sagemaker trainning job 
+
+* Lambda script (inference api)
+
+* A simple UI (temporay name: PingAI.UI )
+
+* SageMaker BYOC Dockerfile
+
+* Workshop gudie doc 
+
+* CDK provisioning script 
+
+  
+
+**Not include:**
+
+* Stable diffusion pre-train model
+
+* Any  public docker image 
+
+  
 
 ## Security
 
