@@ -1,6 +1,12 @@
 ## SageMaker Stable Diffusion Quick Kit
 
-SageMaker Stable Diffusion Quick Kit  is a assets for help our customer to dpeloy stable diffusion model on Amazon Sagemaker and Amazon EKS .
+SageMaker Stable Diffusion Quick Kit is an asset to help our customers launch stable diffusion models services on Amazon Sagemaker or Amazon EKS.
+
+
+
+![architecture](./images/architecture.png)
+
+
 
 **This project  include :** 
 
