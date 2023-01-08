@@ -1,0 +1,227 @@
+# -*- coding: utf-8 -*-
+
+import os
+import json
+import uuid
+import io
+import traceback
+
+from PIL import Image
+
+import requests
+import boto3
+import sagemaker
+import torch
+
+
+from torch import autocast
+from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionImg2ImgPipeline
+from diffusers import EulerDiscreteScheduler,EulerAncestralDiscreteScheduler,HeunDiscreteScheduler,LMSDiscreteScheduler,KDPM2DiscreteScheduler,KDPM2AncestralDiscreteScheduler
+
+
+
+
+
+
+
+s3_client = boto3.client('s3')
+
+
+max_height = os.environ.get("max_height",768)
+max_width = os.environ.get("max_width",768)
+max_steps = os.environ.get("max_steps",100)
+max_count = os.environ.get("max_count",4)
+s3_bucket = os.environ.get("s3_bucket","")
+custom_region= os.environ.get("custom_region",None)
+
+
+
+#need add more sampler
+samplers={
+    "euler_a":EulerAncestralDiscreteScheduler,
+    "eular":EulerDiscreteScheduler,
+    "heun":HeunDiscreteScheduler,
+    "lms":LMSDiscreteScheduler,
+    "dpm2":KDPM2DiscreteScheduler,
+    "dpm2_a":KDPM2AncestralDiscreteScheduler
+}
+
+
+def get_bucket_and_key(s3uri):
+    """
+    get_bucket_and_key is helper function
+    """
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+
+
+def model_fn(model_dir):
+    """
+    Load the model for inference,load model from os.environ['model_name'],diffult use stabilityai/stable-diffusion-2
+    """
+    print("=================model_fn=================")
+    model_name = os.environ.get("model_name","stabilityai/stable-diffusion-2")
+    model_args = json.loads(os.environ['model_args']) if ('model_args' in os.environ) else None
+    task = os.environ['task'] if('task' in os.environ) else "text-to-image"
+    print(f'model_name: {model_name},  model_args: {model_args}, task: {task} ')
+    
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+
+    #load different Pipeline txt2img , img2img
+    #referen doc: https://huggingface.co/docs/diffusers/api/diffusion_pipeline#diffusers.DiffusionPipeline.components
+    #   text2img = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
+    #   img2img = StableDiffusionImg2ImgPipeline(**text2img.components)
+    #   inpaint = StableDiffusionInpaintPipeline(**text2img.components)
+    if(model_args is not None):
+            model = StableDiffusionPipeline.from_pretrained(model_name, **model_args)
+    else:
+            model = StableDiffusionPipeline.from_pretrained(model_name)
+    
+            
+    model.safety_checker = lambda images, clip_input: (images, False)
+    model = model.to("cuda")
+    model.enable_attention_slicing()
+
+    return model
+
+def input_fn(request_body, request_content_type):
+    """
+    Deserialize and prepare the prediction input
+    """
+    # {
+    # "prompt": "a photo of an astronaut riding a horse on mars",
+    # "negative_prompt":"",
+    # "steps":0,
+    # "sampler":"",
+    # "seed":-1,
+    # "height": 512, 
+    # "width": 512
+    # }
+    print(f"=================input_fn================={request_body}")
+    input_data = json.loads(request_body)
+    return prepare_opt(input_data)
+
+def prepare_opt(input_data):
+    """
+    Prepare inference input parameter
+    """
+    opt={}
+    opt["prompt"]=input_data.get("prompt","a photo of an astronaut riding a horse on mars")
+    opt["negative_prompt"]=input_data.get("negative_prompt","")
+    opt["steps"]=input_data.get("steps",20)
+    opt["sampler"]=input_data.get("sampler",None)
+    opt["height"]=input_data.get("height",512)
+    opt["width"]=input_data.get("width",512)
+    opt["count"]=input_data.get("count",1)
+    opt["seed"]=input_data.get("seed",1024)
+    opt["input_image"]=input_data.get("input_image",None)
+    
+    if opt["steps"]>max_steps:
+        opt["steps"]=max_steps
+    if opt["steps"] < 10:
+        opt["steps"]=10
+
+    if opt["height"]>max_height:
+        opt["height"]=max_height
+    if opt["height"]<64:
+        opt["height"]=64
+        
+    if opt["width"]>max_width:
+        opt["width"]=max_width
+    if opt["width"]<64:
+        opt["width"]=64
+        
+    if opt["count"]>max_count:
+        opt["count"]= max_count
+    if opt["count"]<1:
+        opt["count"]=1
+        
+    if opt["sampler"] is not None:
+        opt["sampler"]=samplers[opt["sampler"]] if opt["sampler"] in samplers else samplers["euler_a"]
+        
+    print(f"=================prepare_opt=================\n{opt}")
+    return opt
+
+def predict_fn(input_data, model):
+    """
+    Apply model to the incoming request
+    """
+    print("=================predict_fn=================")
+    print('input_data: ', input_data)
+    prediction = []
+    
+    try:
+
+        sagemaker_session = sagemaker.Session() if custom_region is None else sagemaker.Session(boto3.Session(region_name=custom_region))
+        bucket = sagemaker_session.default_bucket()
+        if s3_bucket!="":
+            bucket=s3_bucket
+        default_output_s3uri = f's3://{bucket}/stablediffusion/asyncinvoke/images/'
+        output_s3uri = input_data['output_s3uri'] if 'output_s3uri' in input_data else default_output_s3uri
+        infer_args = input_data['infer_args'] if ('infer_args' in input_data) else None
+        print('infer_args: ', infer_args)
+        init_image = infer_args['init_image'] if infer_args is not None and 'init_image' in infer_args else None
+        input_image=input_data['input_image']
+        print('init_image: ', init_image )
+        print('input_image: ',input_image)
+        #img2img
+        if input_image is not None:
+            response = requests.get(input_image,timeout=5)
+            init_img = Image.open(io.BytesIO(response.content)).convert("RGB")
+            init_img = init_img.resize((input_data["width"], input_data["height"]))
+            model = StableDiffusionImg2ImgPipeline(**model.components) #need use Img2ImgPipeline
+
+        
+        
+        generator = torch.Generator(device = 'cuda').manual_seed(input_data["seed"])
+        
+        with autocast("cuda"):
+            model.scheduler=input_data["sampler"].from_config(model.scheduler.config)
+            if input_image is None:
+                images = model(input_data["prompt"], input_data["height"], input_data["width"],negative_prompt=input_data["negative_prompt"],num_inference_steps=input_data["steps"],num_images_per_prompt=input_data["count"],generator = generator).images
+            else:
+                images = model(input_data["prompt"],image = init_img,negative_prompt=input_data["negative_prompt"],num_inference_steps=input_data["steps"],num_images_per_prompt=input_data["count"],generator = generator).images
+            for image in images:
+                bucket, key = get_bucket_and_key(output_s3uri)
+                key = f'{key}{uuid.uuid4()}.jpg'
+                buf = io.BytesIO()
+                image.save(buf, format='JPEG')
+                print(key, buf)
+                s3_client.put_object(
+                    Body = buf.getvalue(),
+                    Bucket = bucket,
+                    Key = key,
+                    ContentType = 'image/jpeg',
+                    Metadata={
+                    "prompt":input_data["prompt"],
+                    "seed":str(input_data["seed"])
+                    }
+                )
+                print('image: ', f's3://{bucket}/{key}')
+                prediction.append(f's3://{bucket}/{key}')
+    except Exception as ex:
+        traceback.print_exc()
+        print(f"=================Exception================={ex}")
+    
+    print('prediction: ', prediction)
+    return prediction
+
+def output_fn(prediction, content_type):
+    """
+    Serialize and prepare the prediction output
+    """
+
+    return json.dumps(
+        {
+            'result': prediction
+        }
+    )
+
+
+
+
