@@ -116,7 +116,7 @@ def input_fn(request_body, request_content_type):
     # "height": 512,
     # "width": 512
     # }
-    print(f"=================input_fn================={request_body}")
+    print(f"=================input_fn=================\n{request_content_type}\n{request_body}")
     input_data = json.loads(request_body)
     return prepare_opt(input_data)
 
