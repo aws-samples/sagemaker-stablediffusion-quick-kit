@@ -5,3 +5,4 @@ spacy
 boto3
 sagemaker
 nvgpu
+s3fs

@@ -28,6 +28,7 @@ import requests
 import boto3
 import sagemaker
 import torch
+import s3fs
 
 
 from torch import autocast
@@ -67,6 +68,23 @@ def get_bucket_and_key(s3uri):
     key = s3uri[pos + 1:]
     return bucket, key
 
+def init_pipeline(model_name: str,model_args=None):
+    """
+    help load model from s3
+    """
+    model_path=model_name
+    if model_name.startswith("s3://"):
+        fs = s3fs.S3FileSystem()
+        local_path= "/".join(model_name.split("/")[-2:])
+        model_path=f"/tmp/{local_path}"
+        print(f"need copy {model_name} to {model_path}")
+        fs.get(model_name,model_path, recursive=True)
+        print("download completed")
+    print(f"model_path: {model_path}")
+    if model_args is not None:
+        return StableDiffusionPipeline.from_pretrained(
+             model_path, **model_args)
+    return StableDiffusionPipeline.from_pretrained(model_path)
 
 def model_fn(model_dir):
     """
@@ -90,11 +108,12 @@ def model_fn(model_dir):
     #   text2img = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
     #   img2img = StableDiffusionImg2ImgPipeline(**text2img.components)
     #   inpaint = StableDiffusionInpaintPipeline(**text2img.components)
-    if (model_args is not None):
-        model = StableDiffusionPipeline.from_pretrained(
-            model_name, **model_args)
-    else:
-        model = StableDiffusionPipeline.from_pretrained(model_name)
+    # if (model_args is not None):
+    #     model = StableDiffusionPipeline.from_pretrained(
+    #         model_name, **model_args)
+    # else:
+    #     model = StableDiffusionPipeline.from_pretrained(model_name)
+    model = init_pipeline(model_name,model_args)
 
     model.safety_checker = lambda images, clip_input: (images, False)
     model = model.to("cuda")
