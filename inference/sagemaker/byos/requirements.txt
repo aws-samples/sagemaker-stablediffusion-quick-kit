@@ -6,3 +6,6 @@ boto3
 sagemaker
 nvgpu
 s3fs
+k_diffusion
+omegaconf
+imwatermark
