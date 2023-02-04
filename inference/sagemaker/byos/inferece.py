@@ -19,7 +19,7 @@ import json
 import uuid
 import io
 import sys
-
+import tarfile
 import traceback
 
 from PIL import Image
@@ -32,9 +32,9 @@ import s3fs
 
 
 from torch import autocast
-from diffusers import StableDiffusionPipeline
-from diffusers import StableDiffusionImg2ImgPipeline
-from diffusers import EulerDiscreteScheduler, EulerAncestralDiscreteScheduler, HeunDiscreteScheduler, LMSDiscreteScheduler, KDPM2DiscreteScheduler, KDPM2AncestralDiscreteScheduler
+from diffusers import StableDiffusionPipeline,StableDiffusionImg2ImgPipeline
+from diffusers import AltDiffusionPipeline, AltDiffusionImg2ImgPipeline
+from diffusers import EulerDiscreteScheduler, EulerAncestralDiscreteScheduler, HeunDiscreteScheduler, LMSDiscreteScheduler, KDPM2DiscreteScheduler, KDPM2AncestralDiscreteScheduler,DDIMScheduler
 
 
 s3_client = boto3.client('s3')
@@ -46,7 +46,8 @@ max_steps = os.environ.get("max_steps", 100)
 max_count = os.environ.get("max_count", 4)
 s3_bucket = os.environ.get("s3_bucket", "")
 custom_region = os.environ.get("custom_region", None)
-
+safety_checker_enable = json.loads(os.environ.get("safety_checker_enable", "false"))
+altCLIP =os.environ.get("altCLIP", None)
 
 # need add more sampler
 samplers = {
@@ -55,7 +56,8 @@ samplers = {
     "heun": HeunDiscreteScheduler,
     "lms": LMSDiscreteScheduler,
     "dpm2": KDPM2DiscreteScheduler,
-    "dpm2_a": KDPM2AncestralDiscreteScheduler
+    "dpm2_a": KDPM2AncestralDiscreteScheduler,
+    "ddim": DDIMScheduler
 }
 
 
@@ -68,23 +70,59 @@ def get_bucket_and_key(s3uri):
     key = s3uri[pos + 1:]
     return bucket, key
 
+def untar(fname, dirs):
+    """
+    :param fname: tar file name
+    :param dirs: untar path
+    :return: bool
+    """
+    try:
+        t = tarfile.open(fname)
+        t.extractall(path = dirs)
+        return True
+    except Exception as e:
+        print(e)
+        return False
+
 def init_pipeline(model_name: str,model_args=None):
     """
     help load model from s3
     """
+    print(f"=================init_pipeline:{model_name}=================")
+    if altCLIP is not None:
+        print("Use AltCLIP and BAAI/AltDiffusion-m9")
+        return AltDiffusionPipeline.from_pretrained("BAAI/AltDiffusion-m9")
     model_path=model_name
-    if model_name.startswith("s3://"):
-        fs = s3fs.S3FileSystem()
-        local_path= "/".join(model_name.split("/")[-2:])
-        model_path=f"/tmp/{local_path}"
-        print(f"need copy {model_name} to {model_path}")
-        fs.get(model_name,model_path, recursive=True)
-        print("download completed")
-    print(f"model_path: {model_path}")
-    if model_args is not None:
-        return StableDiffusionPipeline.from_pretrained(
-             model_path, **model_args)
-    return StableDiffusionPipeline.from_pretrained(model_path)
+    base_name=os.path.basename(model_name)
+    try:
+        if model_name.startswith("s3://"):
+            fs = s3fs.S3FileSystem()
+            if base_name=="model.tar.gz":
+                local_path= "/".join(model_name.split("/")[-2:-1])
+                model_path=f"/tmp/{local_path}"
+                print(f"need copy {model_name} to {model_path}")
+                os.makedirs(model_path)
+                fs.get(model_name,model_path+"/", recursive=True)
+                untar(f"/tmp/{local_path}/model.tar.gz",model_path)
+                os.remove(f"/tmp/{local_path}/model.tar.gz")
+                print("download and untar  completed")
+            else:
+                local_path= "/".join(model_name.split("/")[-2:])
+                model_path=f"/tmp/{local_path}"
+                print(f"need copy {model_name} to {model_path}")
+                os.makedirs(model_path)
+                fs.get(model_name,model_path, recursive=True)
+                print("download completed")
+
+        print(f"pretrained model_path: {model_path}")
+        if model_args is not None:
+            return StableDiffusionPipeline.from_pretrained(
+                 model_path, **model_args)
+        return StableDiffusionPipeline.from_pretrained(model_path)
+    except Exception as ex:
+        traceback.print_exc(file=sys.stdout)
+        print(f"=================Exception================={ex}")
+        return None
 
 def model_fn(model_dir):
     """
@@ -103,19 +141,12 @@ def model_fn(model_dir):
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
 
-    # load different Pipeline txt2img , img2img
-    # referen doc: https://huggingface.co/docs/diffusers/api/diffusion_pipeline#diffusers.DiffusionPipeline.components
-    #   text2img = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
-    #   img2img = StableDiffusionImg2ImgPipeline(**text2img.components)
-    #   inpaint = StableDiffusionInpaintPipeline(**text2img.components)
-    # if (model_args is not None):
-    #     model = StableDiffusionPipeline.from_pretrained(
-    #         model_name, **model_args)
-    # else:
-    #     model = StableDiffusionPipeline.from_pretrained(model_name)
+   
     model = init_pipeline(model_name,model_args)
-
-    model.safety_checker = lambda images, clip_input: (images, False)
+    
+    if safety_checker_enable is False :
+        #model.safety_checker = lambda images, clip_input: (images, False)
+        model.safety_checker=None
     model = model.to("cuda")
     model.enable_attention_slicing()
 
@@ -199,14 +230,22 @@ def predict_fn(input_data, model):
         input_image = input_data['input_image']
         print('init_image: ', init_image)
         print('input_image: ', input_image)
-        # img2img
+
+        # load different Pipeline for txt2img , img2img
+        # referen doc: https://huggingface.co/docs/diffusers/api/diffusion_pipeline#diffusers.DiffusionPipeline.components
+        #   text2img = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
+        #   img2img = StableDiffusionImg2ImgPipeline(**text2img.components)
+        #   inpaint = StableDiffusionInpaintPipeline(**text2img.components)
+        #  use StableDiffusionImg2ImgPipeline for input_image        
         if input_image is not None:
             response = requests.get(input_image, timeout=5)
             init_img = Image.open(io.BytesIO(response.content)).convert("RGB")
             init_img = init_img.resize(
                 (input_data["width"], input_data["height"]))
-            model = StableDiffusionImg2ImgPipeline(
-                **model.components)  # need use Img2ImgPipeline
+            if altCLIP is None:
+                model = StableDiffusionImg2ImgPipeline(**model.components)  # need use Img2ImgPipeline
+            else:
+                model = AltDiffusionImg2ImgPipeline(**model.components) #need use AltDiffusionImg2ImgPipeline
 
         generator = torch.Generator(
             device='cuda').manual_seed(input_data["seed"])
@@ -232,7 +271,8 @@ def predict_fn(input_data, model):
                     Key=key,
                     ContentType='image/jpeg',
                     Metadata={
-                        "prompt": input_data["prompt"],
+                        # #s3 metadata only support ascii
+                        "prompt": input_data["prompt"] if (altCLIP is None) else "AltCLIP prompt",
                         "seed": str(input_data["seed"])
                     }
                 )
