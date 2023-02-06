@@ -72,7 +72,111 @@ Resources:
       Action: 'lambda:InvokeFunction'
       Principal: elasticloadbalancing.amazonaws.com
       SourceArn: !Ref TargetGroup
+##########################################################################
+#  CloudFront::CachePolicy                                               #
+##########################################################################
+  3hCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Comment: Cache for 3h
+        Name: !Ref AWS::StackName
+        DefaultTTL: 10800
+        MaxTTL: 10800
+        MinTTL: 10800
+        Name: 3h
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: false
+          EnableAcceptEncodingGzip: false
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - x-forwarded-for
+          QueryStringsConfig:
+            QueryStringBehavior: whitelist
+            QueryStrings:
+              - allowed_query_string_param
+
+  
+##########################################################################
+#  CloudFront::Distribution                                              #
+##########################################################################
+  OriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: "AIGC OAI"
+  SageMakerDefaultBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
+      PolicyDocument:
+        Statement:
+        - Action: "s3:Get*"
+          Effect: Allow
+          Resource: !Sub "arn:aws:s3:::sagemaker-${AWS::Region}-${AWS::AccountId}/*"
+          Principal:
+            CanonicalUser: !GetAtt OriginAccessIdentity.S3CanonicalUserId
+
+  CloudfrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        PriceClass: PriceClass_100
+        IPV6Enabled: true
+        HttpVersion: http2 
+        Origins:
+          - Id: APIOrigin
+            DomainName: !GetAtt LoadBalancer.DNSName
+            CustomOriginConfig:
+              HTTPSPort: 80
+              OriginProtocolPolicy: http-only
+          - Id: S3Origin  
+            DomainName: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}.s3.${AWS::Region}.amazonaws.com"
+            S3OriginConfig:
+              OriginAccessIdentity: !Join ["", ["origin-access-identity/cloudfront/", !Ref OriginAccessIdentity]]
+        Enabled: true
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          ViewerProtocolPolicy: allow-all
+          TargetOriginId: APIOrigin
+          CachePolicyId: !Ref 3hCachePolicy
+        CacheBehaviors:
+          - PathPattern: "/stablediffusion/*"
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            ViewerProtocolPolicy: allow-all
+            TargetOriginId: S3Origin
+            CachePolicyId: !Ref 3hCachePolicy
+          - PathPattern: "/static/*"
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            ViewerProtocolPolicy: allow-all
+            TargetOriginId: S3Origin
+            CachePolicyId: !Ref 3hCachePolicy
 
 Outputs:
   LoadBalancerDNSNAme:
     Value: !GetAtt LoadBalancer.DNSName
+  DistributionDomainName:
+    Description: "Distribution domain name"
+    Value: !GetAtt CloudfrontDistribution.DomainName
+    
