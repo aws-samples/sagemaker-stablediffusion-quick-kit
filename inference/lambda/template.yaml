@@ -14,11 +14,11 @@ Resources:
       Runtime: python3.8
       Environment:
         Variables:
-          SM_REGION: 'us-east-1'
+          SM_REGION: !Sub '${AWS::Region}'
           SM_ENDPOINT: ''
-          S3_BUCKET: 'm.flowq.io'
+          S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
           S3_PREFIX: 'stablediffusion/asyncinvoke'
-          CDN_BASE: 'https://m.flowq.io'
+          CDN_BASE: !GetAtt CloudfrontDistribution.DomainName
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
