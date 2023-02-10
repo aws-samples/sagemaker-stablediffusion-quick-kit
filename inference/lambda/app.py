@@ -21,6 +21,8 @@ import uuid
 import os
 import datetime
 import urllib
+import traceback
+import sys
 
 
 from json import JSONEncoder
@@ -165,8 +167,13 @@ def lambda_handler(event, context):
     try:
         http_method=event.get("httpMethod","GET")
         request_path=event.get("path","")
+        print("http_method:{}".format(http_method))
+        print("request_path:{}".format(request_path))
         if http_method=="POST" and request_path=="/async_hander":
             body=event.get("body","")
+            print("body:{}, {}".format(body, type(body)))
+            encoded_body = bytes(body.encode('UTF-8'))
+            print("encoded_body:{}, {}".format(encoded_body, type(encoded_body)))
             if body=="":
                 return result_json(400,{"msg":"need prompt"})  
             input_file=str(uuid.uuid4())+".json"
@@ -202,5 +209,6 @@ def lambda_handler(event, context):
                     }
 
     except Exception as ex:
+        print("exception : {}".format(ex))
         traceback.print_exc(file=sys.stdout)
         return result_json(502, {'msg':'Opps , something is wrong!'})

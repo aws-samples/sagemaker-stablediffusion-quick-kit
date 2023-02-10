@@ -5,6 +5,8 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
   VpcId:
       Type: AWS::EC2::VPC::Id
+  SmEndpoint:
+      Type: String
 
 Resources:
   StableDiffusionInferenceFunction:
@@ -15,10 +17,14 @@ Resources:
       Environment:
         Variables:
           SM_REGION: !Sub '${AWS::Region}'
-          SM_ENDPOINT: ''
+          SM_ENDPOINT: !Ref SmEndpoint
           S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
           S3_PREFIX: 'stablediffusion/asyncinvoke'
           CDN_BASE: !GetAtt CloudfrontDistribution.DomainName
+      Policies:
+        - AWSLambdaExecute
+        - AmazonS3FullAccess
+        - AmazonSageMakerFullAccess
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -140,8 +146,13 @@ Resources:
         Enabled: true
         DefaultCacheBehavior:
           AllowedMethods:
-            - GET
-            - HEAD
+          - HEAD
+          - DELETE
+          - POST
+          - GET
+          - OPTIONS
+          - PUT
+          - PATCH
           CachedMethods:
             - GET
             - HEAD
