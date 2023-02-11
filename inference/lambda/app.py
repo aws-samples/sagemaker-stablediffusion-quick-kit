@@ -55,11 +55,11 @@ class APIconfig:
 
     def __init__(self, item,include_attr=True):
         if include_attr:
-            self.label = item.get('SM_ENDPOINT').get('S')
-            self.sm_endpoint = item.get('LABEL').get('S')
+            self.sm_endpoint = item.get('SM_ENDPOINT').get('S')
+            self.label = item.get('LABEL').get('S')
         else:
-            self.label = item.get('SM_ENDPOINT')
-            self.sm__endpoint = item.get('LABEL') 
+            self.sm_endpoint = item.get('SM_ENDPOINT')
+            self.label = item.get('LABEL') 
 
 
     def __repr__(self):
