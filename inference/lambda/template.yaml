@@ -173,6 +173,11 @@ Resources:
           AllowedMethods:
             - GET
             - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
           CachedMethods:
             - GET
             - HEAD
@@ -192,7 +197,7 @@ Resources:
             ViewerProtocolPolicy: allow-all
             TargetOriginId: S3Origin
             CachePolicyId: !Ref 3hCachePolicy
-          - PathPattern: "/static/*"
+          - PathPattern: "/aigc/*"
             AllowedMethods:
               - GET
               - HEAD
@@ -203,6 +208,14 @@ Resources:
             ViewerProtocolPolicy: allow-all
             TargetOriginId: S3Origin
             CachePolicyId: !Ref 3hCachePolicy
+          - PathPattern: "/task/*"
+            AllowedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            ViewerProtocolPolicy: allow-all
+            TargetOriginId: APIOrigin
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
 
 Outputs:
   LoadBalancerDNSNAme:
