@@ -182,7 +182,8 @@ export default function GeneratorUI() {
                         multiline
                         fullWidth
                         rows={3}
-                        defaultValue="1girl, brown hair, green eyes, colorful, autumn, cumulonimbus clouds, lighting, blue sky, falling leaves, garden"
+                        defaultValue="a photo of an astronaut riding a horse on moon"
+                        //defaultValue="1girl, brown hair, green eyes, colorful, autumn, cumulonimbus clouds, lighting, blue sky, falling leaves, garden"
                     />
 
                 </Grid>
