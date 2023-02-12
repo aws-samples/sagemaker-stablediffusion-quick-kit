@@ -39,6 +39,9 @@ S3_PREFIX=os.environ.get("S3_PREFIX","stablediffusion/asyncinvoke")
 CDN_BASE=os.environ.get("CDN_BASE","") #cloudfront base uri
 DDB_TABLE=os.environ.get("DDB_TABLE","") #dynamodb table name
 
+if CDN_BASE.startswith("https") is False:
+    CDN_BASE=f'https://{CDN_BASE}'
+
 print(f"CURRENT_REGION |{CURRENT_REGION}|")
 print(f"SM_REGION |{SM_REGION}|")
 print(f"SM_ENDPOINT |{SM_ENDPOINT}|")
@@ -167,6 +170,8 @@ def lambda_handler(event, context):
     try:
         http_method=event.get("httpMethod","GET")
         request_path=event.get("path","")
+        if http_method=="OPTIONS":
+             return result_json(200,[])
         if http_method=="POST" and request_path=="/async_hander":
             #check request body
             body=event.get("body","")
