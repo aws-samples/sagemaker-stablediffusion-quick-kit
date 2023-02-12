@@ -3,22 +3,53 @@ Transform: AWS::Serverless-2016-10-31
 Parameters:
   Subnets:
     Type: List<AWS::EC2::Subnet::Id>
+    Default: 'subnet-68c8b446,subnet-52e49535'
   VpcId:
       Type: AWS::EC2::VPC::Id
+      Default: "vpc-704ac70a"
+  DDBTableName:
+    Type: String
+    Default: 'AIGC_CONFIG'
+  SageMakerEndpoint:
+    Type: String
+    Default: 'pytorch-inference-2023-01-20-13-44-43-845'
 
 Resources:
+  DDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DDBTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "PK"
+          AttributeType: "S"
+        - AttributeName: "SM_ENDPOINT"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "PK"
+          KeyType: "HASH"
+        - AttributeName: "SM_ENDPOINT"
+          KeyType: "RANGE"
   StableDiffusionInferenceFunction:
     Type: AWS::Serverless::Function
+    DependsOn: DDBTable
     Properties:
       Handler: app.lambda_handler
       Runtime: python3.8
       Environment:
         Variables:
           SM_REGION: !Sub '${AWS::Region}'
-          SM_ENDPOINT: ''
+          SM_ENDPOINT: !Ref SageMakerEndpoint
           S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
           S3_PREFIX: 'stablediffusion/asyncinvoke'
+          #CDN_BASE: ''
           CDN_BASE: !GetAtt CloudfrontDistribution.DomainName
+          DDB_TABLE: !Ref DDBTable 
+      Policies:
+        # Give the Lambda service access to poll your DynamoDB, S3, SageMaker 
+        - AmazonDynamoDBFullAccess
+        - AmazonS3FullAccess
+        - AmazonSageMakerFullAccess
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
