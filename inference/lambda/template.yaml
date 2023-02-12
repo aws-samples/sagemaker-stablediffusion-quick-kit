@@ -3,16 +3,16 @@ Transform: AWS::Serverless-2016-10-31
 Parameters:
   Subnets:
     Type: List<AWS::EC2::Subnet::Id>
-    Default: 'subnet-68c8b446,subnet-52e49535'
+    Default: 'subnet-11111111,subnet-22222222'
   VpcId:
       Type: AWS::EC2::VPC::Id
-      Default: "vpc-704ac70a"
+      Default: "vpc-11111111"
   DDBTableName:
     Type: String
     Default: 'AIGC_CONFIG'
   SageMakerEndpoint:
     Type: String
-    Default: 'pytorch-inference-2023-01-20-13-44-43-845'
+    Default: ''
 
 Resources:
   DDBTable:
@@ -42,7 +42,6 @@ Resources:
           SM_ENDPOINT: !Ref SageMakerEndpoint
           S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
           S3_PREFIX: 'stablediffusion/asyncinvoke'
-          #CDN_BASE: ''
           CDN_BASE: !GetAtt CloudfrontDistribution.DomainName
           DDB_TABLE: !Ref DDBTable 
       Policies:
