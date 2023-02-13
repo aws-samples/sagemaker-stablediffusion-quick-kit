@@ -9,3 +9,4 @@ s3fs
 k_diffusion
 omegaconf
 imwatermark
+sentencepiece
