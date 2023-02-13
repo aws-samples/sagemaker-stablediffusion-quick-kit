@@ -170,11 +170,16 @@ def lambda_handler(event, context):
     try:
         http_method=event.get("httpMethod","GET")
         request_path=event.get("path","")
+        print("http_method:{}".format(http_method))
+        print("request_path:{}".format(request_path))
         if http_method=="OPTIONS":
              return result_json(200,[])
         if http_method=="POST" and request_path=="/async_hander":
             #check request body
             body=event.get("body","")
+            print("body:{}, {}".format(body, type(body)))
+            encoded_body = bytes(body.encode('UTF-8'))
+            print("encoded_body:{}, {}".format(encoded_body, type(encoded_body)))
             if body=="":
                 return result_json(400,{"msg":"need prompt"})
             sm_endpoint=event["headers"].get("x-sm-endpoint",None)
@@ -220,5 +225,6 @@ def lambda_handler(event, context):
                     }
 
     except Exception as ex:
+        print("exception : {}".format(ex))
         traceback.print_exc(file=sys.stdout)
         return result_json(502, {'msg':'Opps , something is wrong!'})

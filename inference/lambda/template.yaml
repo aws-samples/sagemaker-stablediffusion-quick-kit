@@ -14,6 +14,7 @@ Parameters:
     Type: String
     Default: ''
 
+
 Resources:
   DDBTable:
     Type: AWS::DynamoDB::Table
@@ -47,6 +48,7 @@ Resources:
       Policies:
         # Give the Lambda service access to poll your DynamoDB, S3, SageMaker 
         - AmazonDynamoDBFullAccess
+        - AWSLambdaExecute
         - AmazonS3FullAccess
         - AmazonSageMakerFullAccess
 
