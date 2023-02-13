@@ -15,15 +15,13 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import json
-import boto3
-import base64
 import uuid
 import os
-import datetime
 import urllib
 import traceback
 import sys
 
+import boto3
 
 from json import JSONEncoder
 
@@ -41,6 +39,9 @@ S3_PREFIX=os.environ.get("S3_PREFIX","stablediffusion/asyncinvoke")
 CDN_BASE=os.environ.get("CDN_BASE","") #cloudfront base uri
 DDB_TABLE=os.environ.get("DDB_TABLE","") #dynamodb table name
 
+if CDN_BASE.startswith("https") is False:
+    CDN_BASE=f'https://{CDN_BASE}'
+
 print(f"CURRENT_REGION |{CURRENT_REGION}|")
 print(f"SM_REGION |{SM_REGION}|")
 print(f"SM_ENDPOINT |{SM_ENDPOINT}|")
@@ -57,18 +58,15 @@ class APIconfig:
 
     def __init__(self, item,include_attr=True):
         if include_attr:
-            self.label = item.get('label').get('S')
-            self.api_endpoint = item.get('api_endpoint').get('S')
-            self.sagemaker_endpoint = item.get('sagemaker_endpoint').get('S') if  item.get('sagemaker_endpoint')!=None else ''
+            self.sm_endpoint = item.get('SM_ENDPOINT').get('S')
+            self.label = item.get('LABEL').get('S')
         else:
-            self.label = item.get('label')
-            self.api_endpoint = item.get('api_endpoint')
-            self.sagemaker_endpoint = item.get('sagemaker_endpoint') if  item.get('sagemaker_endpoint')!=None else ''
-            
+            self.sm_endpoint = item.get('SM_ENDPOINT')
+            self.label = item.get('LABEL') 
 
 
     def __repr__(self):
-        return f"APIconfig<{self.label} -- {self.api_endpoint} -- {self.inference_type}>"
+        return f"APIconfig<{self.label} -- {self.sm_endpoint}>"
         
 
 class APIConfigEncoder(JSONEncoder):
@@ -79,12 +77,15 @@ class APIConfigEncoder(JSONEncoder):
 def search_item(table_name, pk, prefix):
     #if env local_mock is true return local config
     dynamodb = boto3.client('dynamodb')
-    query_str = "PK = :pk and begins_with(SK, :sk) " if prefix != "" else "PK = :pk "
-    attributes_value={
-            ":pk": {"S": pk},
-    }
-    if prefix != "":
-        attributes_value[":sk"]={"S": prefix}
+   
+    if prefix == "":
+        query_str = "PK = :pk "
+        attributes_value={
+        ":pk": {"S": pk},
+        }
+    else:
+       query_str = "PK = :pk and begins_with(SM_ENDPOINT, :sk) "
+       attributes_value[":sk"]={"S": prefix}
     
     resp = dynamodb.query(
         TableName=table_name,
@@ -100,9 +101,7 @@ def async_inference(input_location,sm_endpoint=None):
     :param input_location: input_location used by sagemaker endpoint async
     :param sm_endpoint: stable diffusion model's sagemaker endpoint name
     """
-    if sm_endpoint is None and SM_ENDPOINT is not None:
-        sm_endpoint=SM_ENDPOINT
-    if sm_endpoint is None and SM_ENDPOINT is None:
+    if sm_endpoint is None :
         raise Exception("Not found SageMaker")
     response = sagemaker_runtime.invoke_endpoint_async(
             EndpointName=sm_endpoint,
@@ -133,11 +132,15 @@ def get_async_inference_out_file(output_location):
             return {"status":"Failed", "msg":"have other issue, please contact site admini"}
 
 
-def result_json(status_code,body):
+def result_json(status_code,body,cls=None):
     """
     :param status_code: return http status code
     :param body: return body  
     """
+    if cls != None:
+        body=json.dumps(body,cls=cls)
+    else:
+        body = json.dumps(body)
     return {
         'statusCode': status_code,
         'isBase64Encoded': False,
@@ -148,7 +151,7 @@ def result_json(status_code,body):
             'access-control-allow-headers': '*'
             
         },
-        'body': json.dumps(body)
+        'body': body
     }
 
 def get_s3_uri(bucket, prefix):
@@ -169,13 +172,26 @@ def lambda_handler(event, context):
         request_path=event.get("path","")
         print("http_method:{}".format(http_method))
         print("request_path:{}".format(request_path))
+        if http_method=="OPTIONS":
+             return result_json(200,[])
         if http_method=="POST" and request_path=="/async_hander":
+            #check request body
             body=event.get("body","")
             print("body:{}, {}".format(body, type(body)))
             encoded_body = bytes(body.encode('UTF-8'))
             print("encoded_body:{}, {}".format(encoded_body, type(encoded_body)))
             if body=="":
-                return result_json(400,{"msg":"need prompt"})  
+                return result_json(400,{"msg":"need prompt"})
+            sm_endpoint=event["headers"].get("x-sm-endpoint",None)
+            #check sm_endpoint , if request have not check it from dynamodb
+            if sm_endpoint is None:
+                items=search_item(DDB_TABLE, "APIConfig", "")
+                configs=[APIconfig(item) for item in items]
+                if len(configs)>0:
+                    sm_endpoint=configs[0].sm_endpoint
+                else:
+                     return result_json(400,{"msg":"not found SageMaker Endpoint"})
+                
             input_file=str(uuid.uuid4())+".json"
             s3_resource = boto3.resource('s3')
             s3_object = s3_resource.Object(S3_BUCKET, f'{S3_PREFIX}/input/{input_file}')
@@ -183,7 +199,7 @@ def lambda_handler(event, context):
                 Body=(bytes(body.encode('UTF-8')))
             )
             print(f'input_location: s3://{S3_BUCKET}/{S3_PREFIX}/input/{input_file}')
-            status_code, output_location=async_inference(f's3://{S3_BUCKET}/{S3_PREFIX}/input/{input_file}',event["headers"].get("x-sm-endpoint",None))
+            status_code, output_location=async_inference(f's3://{S3_BUCKET}/{S3_PREFIX}/input/{input_file}',sm_endpoint)
             status_code=200 if status_code==202 else 403
             return result_json(status_code,{"task_id":os.path.basename(output_location).split('.')[0]})
         elif http_method=="GET" and request_path=="/config":
@@ -205,7 +221,7 @@ def lambda_handler(event, context):
                     'headers':{
                      'Content-Type': 'text/html',
                     },
-                    'body': 'Hello World!'
+                    'body': 'AIGC workshop !'
                     }
 
     except Exception as ex:

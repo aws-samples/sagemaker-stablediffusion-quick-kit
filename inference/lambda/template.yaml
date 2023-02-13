@@ -3,25 +3,51 @@ Transform: AWS::Serverless-2016-10-31
 Parameters:
   Subnets:
     Type: List<AWS::EC2::Subnet::Id>
+    Default: 'subnet-11111111,subnet-22222222'
   VpcId:
       Type: AWS::EC2::VPC::Id
-  SmEndpoint:
-      Type: String
+      Default: "vpc-11111111"
+  DDBTableName:
+    Type: String
+    Default: 'AIGC_CONFIG'
+  SageMakerEndpoint:
+    Type: String
+    Default: ''
+
 
 Resources:
+  DDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DDBTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "PK"
+          AttributeType: "S"
+        - AttributeName: "SM_ENDPOINT"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "PK"
+          KeyType: "HASH"
+        - AttributeName: "SM_ENDPOINT"
+          KeyType: "RANGE"
   StableDiffusionInferenceFunction:
     Type: AWS::Serverless::Function
+    DependsOn: DDBTable
     Properties:
       Handler: app.lambda_handler
       Runtime: python3.8
       Environment:
         Variables:
           SM_REGION: !Sub '${AWS::Region}'
-          SM_ENDPOINT: !Ref SmEndpoint
+          SM_ENDPOINT: !Ref SageMakerEndpoint
           S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
           S3_PREFIX: 'stablediffusion/asyncinvoke'
           CDN_BASE: !GetAtt CloudfrontDistribution.DomainName
+          DDB_TABLE: !Ref DDBTable 
       Policies:
+        # Give the Lambda service access to poll your DynamoDB, S3, SageMaker 
+        - AmazonDynamoDBFullAccess
         - AWSLambdaExecute
         - AmazonS3FullAccess
         - AmazonSageMakerFullAccess
@@ -146,13 +172,13 @@ Resources:
         Enabled: true
         DefaultCacheBehavior:
           AllowedMethods:
-          - HEAD
-          - DELETE
-          - POST
-          - GET
-          - OPTIONS
-          - PUT
-          - PATCH
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
           CachedMethods:
             - GET
             - HEAD
@@ -172,7 +198,7 @@ Resources:
             ViewerProtocolPolicy: allow-all
             TargetOriginId: S3Origin
             CachePolicyId: !Ref 3hCachePolicy
-          - PathPattern: "/static/*"
+          - PathPattern: "/aigc/*"
             AllowedMethods:
               - GET
               - HEAD
@@ -183,6 +209,14 @@ Resources:
             ViewerProtocolPolicy: allow-all
             TargetOriginId: S3Origin
             CachePolicyId: !Ref 3hCachePolicy
+          - PathPattern: "/task/*"
+            AllowedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            ViewerProtocolPolicy: allow-all
+            TargetOriginId: APIOrigin
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
 
 Outputs:
   LoadBalancerDNSNAme:
