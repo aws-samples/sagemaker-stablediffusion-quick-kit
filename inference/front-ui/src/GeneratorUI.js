@@ -69,18 +69,26 @@ const PostPrompt = (prompt, width, height, steps, seeds, dispath, loadingHandler
 }
 
 
-const AsyncPostPrompt = (SMEndpoint,prompt, width, height, steps, seeds, dispath, loadingHandler) => {
+const AsyncPostPrompt = (SMEndpointInfo,prompt, width, height, steps, seeds,imageCount, dispath, loadingHandler) => {
     dispath(imageOnChange([]))
    
 
-    console.log(SMEndpoint)
+    console.log(SMEndpointInfo)
+    const sm_endpoint=SMEndpointInfo.split(",")[0]
+    const hit=SMEndpointInfo.split(",")[1]
     const config = {
         headers: {
-            "X-SM-Endpoint": SMEndpoint
+            "X-SM-Endpoint": sm_endpoint
         }
     };
-
-    axios.post(BAES_URI+"/async_hander", { "prompt": prompt, "width": width, "height": height, "steps": steps, "seed": parseInt(seeds), "sampler": "" }, config).then((response) => {
+    if (hit!=""){
+        prompt=hit+","+prompt
+    }
+    if (imageCount>5){
+        imageCount=1
+    }
+    
+    axios.post(BAES_URI+"/async_hander", { "prompt": prompt, "width": width, "height": height, "steps": steps, "seed": parseInt(seeds), "sampler": "","count":imageCount }, config).then((response) => {
         console.log(response.data, response.data.task_id);
 
         let count = 0
@@ -133,6 +141,7 @@ export default function GeneratorUI() {
     const [styleOption, setStyleOption] = useState("anime");
     const [imageSizeIdx, setImageSizeIdx] = useState(0);
     const [steps, setSteps] = useState(20);
+    const [imageCount, setImagesCount] = useState(1);
     const [seeds, setSeeds] = useState(-1);
 
     const [progress, setProgress] = React.useState(10);
@@ -150,7 +159,7 @@ export default function GeneratorUI() {
 
     const renderListOfImages = (images) => {
         return images.map(image =>
-            <Zoom key="{Math.random().toString(36).slice(2, 7)}">
+            <Zoom key="{Math.random().toString(36)}">
                 <Image width={300} src={image} errorIcon={null}></Image>
             </Zoom>)
     }
@@ -193,7 +202,7 @@ export default function GeneratorUI() {
 
                     <FormLabel id="demo-radio-buttons-group-label">Image Size</FormLabel>
                     <Slider value={imageSizeIdx} min={0} max={8} valueLabelDisplay="auto" onChange={imageSizeOnChange} valueLabelFormat={(x) => ImageSize[x][0] + "x" + ImageSize[x][1]} />
-
+                    
                 </Grid>
                 <Grid xs={4}>
                     <TextField
@@ -206,7 +215,7 @@ export default function GeneratorUI() {
                     />
                 </Grid>
                 <Grid xs={4}>
-                    <FormLabel id="demo-radio-buttons-group-label">Seeds</FormLabel>
+                <FormLabel id="demo-radio-buttons-group-label">Seeds</FormLabel>
                     <Input
                         id="outlined-multiline-static"
                         fullWidth
@@ -214,8 +223,10 @@ export default function GeneratorUI() {
                         value={seeds}
                         onChange={(e) => setSeeds(e.target.value)}
                     />
+        
                 </Grid>
                 <Grid xs={4}>
+                    
                     <RadioGroup
                         row
                         aria-labelledby="demo-row-radio-buttons-group-label"
@@ -227,7 +238,7 @@ export default function GeneratorUI() {
                         
                         {
                          apiConfigs.map((item,i)=>{
-                                return <FormControlLabel key={i} value={item.sm_endpoint} control={<Radio />} label={item.label} />
+                                return <FormControlLabel key={i} value={item.sm_endpoint+","+item.hit} control={<Radio />} label={item.label} />
                             })
                         }
 
@@ -235,14 +246,25 @@ export default function GeneratorUI() {
                 </Grid>
 
 
-                <Grid xs={12}></Grid>
-                <Grid xs={5}></Grid>
+                <Grid xs={12}>
+                
+                </Grid>
+                <Grid xs={5}>
+                </Grid>
+                <Grid sx={{ width: 120 }}>
+                <FormLabel id="demo-count-buttons-group-label">Image Count</FormLabel>
+                    <Slider  valule={steps} min={1} max={5} valueLabelDisplay="auto" onChange={(e) => setImagesCount(e.target.value)} />
+                 </Grid>
+                 <Grid xs={5}></Grid>
+                <Grid xs={5}>
+                </Grid>
                 <Grid xs={4}>
+                    
                     <Button variant="contained" color="success" onClick={() => {
                         console.log(refPrompt.current.value, styleOption, steps, ImageSize[imageSizeIdx], seeds)
                         setLoading({})
                         setProgress(0)
-                        AsyncPostPrompt( styleOption,` ${refPrompt.current.value}`, ImageSize[imageSizeIdx][0], ImageSize[imageSizeIdx][1], steps, seeds, dispatch, setLoading)
+                        AsyncPostPrompt( styleOption,` ${refPrompt.current.value}`, ImageSize[imageSizeIdx][0], ImageSize[imageSizeIdx][1], steps, seeds,imageCount, dispatch, setLoading)
 
                     }}
                     >Generate</Button>
