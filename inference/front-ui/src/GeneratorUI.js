@@ -4,7 +4,7 @@ import { useSelector, useDispatch } from 'react-redux'
 
 
 import { imageOnChange } from './slices/imageSlice'
-import { apiConfigLoad,fetchAPIConfigsAsync,BAES_URI  } from './slices/apiConfigSlice'
+import { apiConfigLoad, fetchAPIConfigsAsync, BAES_URI } from './slices/apiConfigSlice'
 
 
 //import mui 
@@ -23,6 +23,13 @@ import LinearProgress from '@mui/material/LinearProgress';
 
 import Zoom from 'react-medium-image-zoom'
 import 'react-medium-image-zoom/dist/styles.css'
+
+
+import Alert from '@mui/material/Alert';
+import IconButton from '@mui/material/IconButton';
+import Collapse from '@mui/material/Collapse';
+
+import CloseIcon from '@mui/icons-material/Close';
 
 import Image from 'mui-image'
 
@@ -44,7 +51,7 @@ const ImageSize = [
 
 
 
-  
+
 
 
 const PostPrompt = (prompt, width, height, steps, seeds, dispath, loadingHandler) => {
@@ -55,7 +62,7 @@ const PostPrompt = (prompt, width, height, steps, seeds, dispath, loadingHandler
         }
     };
 
-    axios.post(BAES_URI+"/invocations", { "prompt": prompt, "width": width, "height": height, "steps": steps, "seed": parseInt(seeds), count: 4 }, config).then((response) => {
+    axios.post(BAES_URI + "/invocations", { "prompt": prompt, "width": width, "height": height, "steps": steps, "seed": parseInt(seeds), count: 4 }, config).then((response) => {
         console.log(response.data);
         //imageHander(response.data.result[0])
         dispath(imageOnChange(response.data.result))
@@ -69,31 +76,31 @@ const PostPrompt = (prompt, width, height, steps, seeds, dispath, loadingHandler
 }
 
 
-const AsyncPostPrompt = (SMEndpointInfo,prompt, width, height, steps, seeds,imageCount, dispath, loadingHandler) => {
-    dispath(imageOnChange([]))
+const AsyncPostPrompt = (SMEndpointInfo, prompt, width, height, steps, seeds, imageCount, dispath, loadingHandler) => {
    
+    dispath(imageOnChange([]))
 
     console.log(SMEndpointInfo)
-    const sm_endpoint=SMEndpointInfo.split(",")[0]
-    const hit=SMEndpointInfo.split(",")[1]
+    const sm_endpoint = SMEndpointInfo.split(",")[0]
+    const hit = SMEndpointInfo.split(",")[1]
     const config = {
         headers: {
             "X-SM-Endpoint": sm_endpoint
         }
     };
-    if (hit!=""){
-        prompt=hit+","+prompt
+    if (hit != "") {
+        prompt = hit + "," + prompt
     }
-    if (imageCount>5){
-        imageCount=1
+    if (imageCount > 5) {
+        imageCount = 1
     }
-    
-    axios.post(BAES_URI+"/async_hander", { "prompt": prompt, "width": width, "height": height, "steps": steps, "seed": parseInt(seeds), "sampler": "","count":imageCount }, config).then((response) => {
+
+    axios.post(BAES_URI + "/async_hander", { "prompt": prompt, "width": width, "height": height, "steps": steps, "seed": parseInt(seeds), "sampler": "", "count": imageCount }, config).then((response) => {
         console.log(response.data, response.data.task_id);
 
         let count = 0
         const timer = setInterval(() => {
-            axios.get(BAES_URI+"/task/" + response.data.task_id).then((resp) => {
+            axios.get(BAES_URI + "/task/" + response.data.task_id).then((resp) => {
                 if (resp.data.status == "completed") {
                     console.log("task completed")
                     if (resp.data.images.length > 0) {
@@ -123,26 +130,27 @@ export default function GeneratorUI() {
     const images = useSelector((state) => state.image.value)
     const apiConfigs = useSelector((state) => state.apiConfig.value)
 
-    
-  
+
+
     const dispatch = useDispatch()
     const refPrompt = useRef();
-    
+
     //load apiconfig
-    if (apiConfigs.length==0){
-       dispatch(fetchAPIConfigsAsync())
-       
+    if (apiConfigs.length == 0) {
+        dispatch(fetchAPIConfigsAsync())
+
     }
 
-   
 
-
-
-    const [styleOption, setStyleOption] = useState("anime");
+    const [styleOption, setStyleOption] = useState("");
     const [imageSizeIdx, setImageSizeIdx] = useState(0);
     const [steps, setSteps] = useState(20);
     const [imageCount, setImagesCount] = useState(1);
     const [seeds, setSeeds] = useState(-1);
+    const [open, setOpen] = useState(false);
+
+    const [errorMessage, setErrorMessage] = useState("");
+
 
     const [progress, setProgress] = React.useState(10);
     const [loading, setLoading] = React.useState({ display: 'none' });
@@ -174,14 +182,35 @@ export default function GeneratorUI() {
         };
     }, []);
 
-    
+
 
     return (
 
         <Box sx={{ flexGrow: 1 }}>
 
             <Grid container spacing={2}>
+                <Grid xs={12}>
+                    <Collapse in={open}>
+                        <Alert severity="error"
+                            action={
+                                <IconButton
+                                    aria-label="close"
+                                    color="inherit"
+                                    size="small"
+                                    onClick={() => {
+                                        setOpen(false);
+                                    }}
+                                >
+                                    <CloseIcon fontSize="inherit" />
+                                </IconButton>
+                            }
+                            sx={{ mb: 2 }}
+                        >
+                            {errorMessage}
+                        </Alert>
+                    </Collapse>
 
+                </Grid>
                 <Grid xs={8}>
 
                     <TextField
@@ -192,7 +221,7 @@ export default function GeneratorUI() {
                         fullWidth
                         rows={3}
                         defaultValue="a photo of an astronaut riding a horse on moon"
-                        //defaultValue="1girl, brown hair, green eyes, colorful, autumn, cumulonimbus clouds, lighting, blue sky, falling leaves, garden"
+                    //defaultValue="1girl, brown hair, green eyes, colorful, autumn, cumulonimbus clouds, lighting, blue sky, falling leaves, garden"
                     />
 
                 </Grid>
@@ -202,7 +231,7 @@ export default function GeneratorUI() {
 
                     <FormLabel id="demo-radio-buttons-group-label">Image Size</FormLabel>
                     <Slider value={imageSizeIdx} min={0} max={8} valueLabelDisplay="auto" onChange={imageSizeOnChange} valueLabelFormat={(x) => ImageSize[x][0] + "x" + ImageSize[x][1]} />
-                    
+
                 </Grid>
                 <Grid xs={4}>
                     <TextField
@@ -215,7 +244,7 @@ export default function GeneratorUI() {
                     />
                 </Grid>
                 <Grid xs={4}>
-                <FormLabel id="demo-radio-buttons-group-label">Seeds</FormLabel>
+                    <FormLabel id="demo-radio-buttons-group-label">Seeds</FormLabel>
                     <Input
                         id="outlined-multiline-static"
                         fullWidth
@@ -223,10 +252,10 @@ export default function GeneratorUI() {
                         value={seeds}
                         onChange={(e) => setSeeds(e.target.value)}
                     />
-        
+
                 </Grid>
                 <Grid xs={4}>
-                    
+
                     <RadioGroup
                         row
                         aria-labelledby="demo-row-radio-buttons-group-label"
@@ -235,10 +264,10 @@ export default function GeneratorUI() {
                         value={styleOption}
 
                     >
-                        
+
                         {
-                         apiConfigs.map((item,i)=>{
-                                return <FormControlLabel key={i} value={item.sm_endpoint+","+item.hit} control={<Radio />} label={item.label} />
+                            apiConfigs.map((item, i) => {
+                                return <FormControlLabel key={i} value={item.sm_endpoint + "," + item.hit} control={<Radio />} label={item.label} />
                             })
                         }
 
@@ -247,24 +276,32 @@ export default function GeneratorUI() {
 
 
                 <Grid xs={12}>
-                
+
                 </Grid>
                 <Grid xs={5}>
                 </Grid>
                 <Grid sx={{ width: 120 }}>
-                <FormLabel id="demo-count-buttons-group-label">Image Count</FormLabel>
-                    <Slider  valule={steps} min={1} max={5} valueLabelDisplay="auto" onChange={(e) => setImagesCount(e.target.value)} />
-                 </Grid>
-                 <Grid xs={5}></Grid>
+                    <FormLabel id="demo-count-buttons-group-label">Image Count</FormLabel>
+                    <Slider valule={steps} min={1} max={5} valueLabelDisplay="auto" onChange={(e) => setImagesCount(e.target.value)} />
+                </Grid>
+                <Grid xs={5}></Grid>
                 <Grid xs={5}>
                 </Grid>
                 <Grid xs={4}>
-                    
+
                     <Button variant="contained" color="success" onClick={() => {
+                        if (styleOption == "") {
+                            setErrorMessage("need select style at least one.");
+                            setOpen(true);
+                            return
+                        }
+                        
+                        
                         console.log(refPrompt.current.value, styleOption, steps, ImageSize[imageSizeIdx], seeds)
+                        setOpen(false)
                         setLoading({})
                         setProgress(0)
-                        AsyncPostPrompt( styleOption,` ${refPrompt.current.value}`, ImageSize[imageSizeIdx][0], ImageSize[imageSizeIdx][1], steps, seeds,imageCount, dispatch, setLoading)
+                        AsyncPostPrompt(styleOption, ` ${refPrompt.current.value}`, ImageSize[imageSizeIdx][0], ImageSize[imageSizeIdx][1], steps, seeds, imageCount, dispatch, setLoading)
 
                     }}
                     >Generate</Button>

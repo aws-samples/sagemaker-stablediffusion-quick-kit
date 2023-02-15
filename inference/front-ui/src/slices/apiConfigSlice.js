@@ -4,6 +4,8 @@ import { createSlice,createAsyncThunk  } from "@reduxjs/toolkit";
 import axios from 'axios'
 
 //you can use full URI
+//export const BAES_URI='http://sam-s-LoadB-ZCAQMIGAB6IN-2005437513.us-east-1.elb.amazonaws.com' 
+//export const BAES_URI='https://dfjcgkift2mhn.cloudfront.net' 
 export const BAES_URI='' 
 
 //init api config from lambda, dynamodb
