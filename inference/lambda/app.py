@@ -59,15 +59,16 @@ class APIconfig:
     def __init__(self, item,include_attr=True):
         if include_attr:
             self.sm_endpoint = item.get('SM_ENDPOINT').get('S')
-            self.label = item.get('LABEL').get('S')
+            self.label = item.get('LABEL').get('S'),
+            self.hit = item.get('HIT',{}).get('S','')
         else:
             self.sm_endpoint = item.get('SM_ENDPOINT')
             self.label = item.get('LABEL') 
+            self.hit = item.get('HIT','')
 
 
     def __repr__(self):
         return f"APIconfig<{self.label} -- {self.sm_endpoint}>"
-        
 
 class APIConfigEncoder(JSONEncoder):
         def default(self, o):
