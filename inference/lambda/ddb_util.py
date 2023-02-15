@@ -45,16 +45,17 @@ def list_item(table_name='AIGC_CONFIG'):
         ScanIndexForward=True
     )
     items = resp.get('Items',[])
-    configs=[{"label":item["LABEL"]["S"],"sm_endpoint":item["SM_ENDPOINT"]["S"]} for item in items]
+    
+    configs=[{"label":item["LABEL"]["S"],"sm_endpoint":item["SM_ENDPOINT"]["S"],"hit":item.get("HIT",{}).get("S","")} for item in items]
     return configs
 
-def put_item(table_name='AIGC_CONFIG', label=None,sm_endpoint=None):
+def put_item(table_name='AIGC_CONFIG', label=None,sm_endpoint=None,hit=''):
     """
     table_name: dynamo table name
     label: model label name
     sm_endpoint: model SageMaker endpoint
     """
-    item = {"LABEL":label, "SM_ENDPOINT": sm_endpoint, "PK": "APIConfig"}
+    item = {"LABEL":label, "SM_ENDPOINT": sm_endpoint,"HIT":hit, "PK": "APIConfig"}
     table = ddb_resource.Table(table_name)
     resp = table.put_item(Item=item)
     return resp['ResponseMetadata']['HTTPStatusCode'] == 200
@@ -155,6 +156,10 @@ def main():
                         type=str,
                         default=None,
                         help='label')
+    parser.add_argument('--hit',
+                        type=str,
+                        default='',
+                        help='style hit')
     parser.add_argument('--ddb_table',
                         type=str,
                         default='AIGC_CONFIG',
@@ -167,7 +172,7 @@ def main():
     if action=='list':
         configs=list_item(args.ddb_table)
         for conf in configs:
-            print(f'label: {conf["label"]}, sm_endpoint: {conf["sm_endpoint"]}')
+            print(f'label: {conf["label"]}, sm_endpoint: {conf["sm_endpoint"]} , hit: {conf["hit"]}')
     elif action == 'add':
         if args.label is None or args.sm_endpoint is None:
             print('You must input label and sagemaker endpoint')
@@ -176,7 +181,7 @@ def main():
         if endpoint_exists is False:
             print(f"Add failed , SageMaker Endpoint [{args.sm_endpoint}] not exists")
         else:
-            add_action=put_item(table_name=args.ddb_table,label=args.label,sm_endpoint=args.sm_endpoint)
+            add_action=put_item(table_name=args.ddb_table,label=args.label,sm_endpoint=args.sm_endpoint,hit=args.hit)
             print(f"Add : { add_action}")
     elif action == 'remove':
         if args.sm_endpoint is None:
