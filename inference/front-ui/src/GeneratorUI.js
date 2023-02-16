@@ -291,7 +291,7 @@ export default function GeneratorUI() {
 
                     <Button variant="contained" color="success" onClick={() => {
                         if (styleOption == "") {
-                            setErrorMessage("need select style at least one.");
+                            setErrorMessage("your need select a model.");
                             setOpen(true);
                             return
                         }
