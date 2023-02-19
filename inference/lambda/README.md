@@ -39,7 +39,7 @@ Edit template.yaml , replace vpc-11111111, subnet-11111111,subnet-22222222, AIGC
 
 ```bash
 sam build
-sam deploy --guided # 
+sam deploy --guided # input your configuration
 ```
 
 
