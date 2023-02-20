@@ -1,19 +1,21 @@
 AWSTemplateFormatVersion : '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Parameters:
-  Subnets:
-    Type: List<AWS::EC2::Subnet::Id>
-    Default: 'subnet-11111111,subnet-22222222'
   VpcId:
       Type: AWS::EC2::VPC::Id
       Default: "vpc-11111111"
+      Description: 'the vpc id to deploy ALB'
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: 'subnet-11111111,subnet-22222222'
+    Description: 'the subnets ids to deploy ALB'
   DDBTableName:
     Type: String
     Default: 'AIGC_CONFIG'
   SageMakerEndpoint:
     Type: String
-    Default: ''
-
+    Default: 'AIGC-Quick-Kit-a93xxxc-xxb4-4xxx-84a0-5xxxxx1'
+    Description: 'Sagemaker Endpoint Name'
 
 Resources:
   DDBTable:
@@ -37,6 +39,7 @@ Resources:
     Properties:
       Handler: app.lambda_handler
       Runtime: python3.8
+      CodeUri: app/
       Environment:
         Variables:
           SM_REGION: !Sub '${AWS::Region}'

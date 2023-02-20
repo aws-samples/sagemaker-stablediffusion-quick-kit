@@ -15,22 +15,31 @@
 
 ### 2. Deploy resource with SAM  
 
-Edit template.yaml , replace vpc-11111111, subnet-11111111,subnet-22222222
+Edit template.yaml , replace vpc-11111111, subnet-11111111,subnet-22222222, AIGC-Quick-Kit-a93xxxc-xxb4-4xxx-84a0-5xxxxx1
 
 ```yam
-Subnets:
-    Type: List<AWS::EC2::Subnet::Id>
-    Default: 'subnet-11111111,subnet-22222222' #use your subnetid
   VpcId:
       Type: AWS::EC2::VPC::Id
-      Default: "vpc-11111111" #use your vpcid
+      Default: "vpc-11111111"
+      Description: 'the vpc id to deploy ALB'
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: 'subnet-11111111,subnet-22222222'
+    Description: 'the subnets ids to deploy ALB'
+  DDBTableName:
+    Type: String
+    Default: 'AIGC_CONFIG'
+  SageMakerEndpoint:
+    Type: String
+    Default: 'AIGC-Quick-Kit-a93xxxc-xxb4-4xxx-84a0-5xxxxx1'
+    Description: 'Sagemaker Endpoint Name'
 ```
 
 
 
 ```bash
 sam build
-sam deploy
+sam deploy --guided # input your configuration
 ```
 
 
