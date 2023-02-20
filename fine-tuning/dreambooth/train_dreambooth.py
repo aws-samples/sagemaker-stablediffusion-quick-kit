@@ -10,6 +10,8 @@ import traceback
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional
+import boto3
+from botocore.exceptions import NoCredentialsError
 
 import torch
 import torch.nn.functional as F
@@ -38,6 +40,7 @@ from extensions.sd_dreambooth_extension.lora_diffusion.lora import weight_apply_
 pil_features = list_features()
 mem_record = {}
 with_prior = False
+s3_client = boto3.client('s3')
 
 torch.backends.cudnn.benchmark = False
 
@@ -48,6 +51,57 @@ console.setLevel(logging.DEBUG)
 logger.addHandler(console)
 logger.setLevel(logging.DEBUG)
 dl.set_verbosity_error()
+
+
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+
+def upload_directory_to_s3(local_directory, dest_s3_path):
+    bucket,s3_prefix=get_bucket_and_key(dest_s3_path)
+    for root, dirs, files in os.walk(local_directory):
+        for filename in files:
+            local_path = os.path.join(root, filename)
+            relative_path = os.path.relpath(local_path, local_directory)
+            s3_path = os.path.join(s3_prefix, relative_path).replace("\\", "/")
+            s3_client.upload_file(local_path, bucket, s3_path)
+            print(f'File {local_path} uploaded to s3://{bucket}/{s3_path}')
+        for subdir in dirs:
+            upload_directory_to_s3(local_directory+"/"+subdir,dest_s3_path+"/"+subdir)
+
+def upload_single_file(src_local_path, dest_s3_path):
+    """
+    上传单个文件
+    :param src_local_path:
+    :param dest_s3_path:
+    :return:
+    """
+    bucket_name,dest_s3_path=get_bucket_and_key(dest_s3_path)
+    try:
+        with open(src_local_path, 'rb') as f:
+            s3_client.upload_fileobj(f, bucket_name, dest_s3_path)
+    except Exception as e:
+        print(f'Upload data failed. | src: {src_local_path} | dest: {dest_s3_path} | Exception: {e}')
+        return False
+    print(f'Uploading file successful. | src: {src_local_path} | dest: {dest_s3_path}')
+
+
+def upload_files(path_local, path_s3):
+    """
+    上传（重复上传覆盖同名文件）
+    :param path_local: 本地路径
+    :param path_s3: s3路径
+    """
+    print(f'Start upload files.')
+
+    if not upload_single_file(path_local, path_s3):
+        print(f'Upload files failed.')
+
+    print(f'Upload files successful.')
+
 
 
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision):
@@ -72,6 +126,13 @@ def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: st
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
+    parser.add_argument(
+            "--manul_upload_model_path",
+            type=str,
+            default=None,
+            required=True,
+            help="manually upload model folder files into s3 path.",
+    )
     parser.add_argument(
             "--model_name",
             type=str,
@@ -383,7 +444,7 @@ def parse_args(input_args=None):
         with open(args.concepts_list, "r") as f:
             args.concepts_list = json.load(f)
 
-    print(args.__dict__)        
+    print(args.__dict__)
     return args
 
 
@@ -956,6 +1017,11 @@ def main(args, memory_record, use_subdir, lora_model=None, lora_alpha=1.0, lora_
                         else:
                             out_file = None
                             s_pipeline.save_pretrained(args.models_path)
+
+                            ###  manually upload trained db model dirs to s3 path#####
+                            #### to eliminate sagemaker tar process#####
+                            print(f"manul_upload_model_path is {args.manul_upload_model_path}")
+                            upload_directory_to_s3(args.models_path,args.manul_upload_model_path)
 
                             #compile_checkpoint('/opt/ml/model/',args.models_path,None,args.model_name, half=args.half_model, use_subdir=use_subdir,
                             #                   reload_models=False, lora_path=out_file, log=False,
