@@ -7,6 +7,8 @@ import os
 import random
 import time
 import traceback
+import subprocess
+import json
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional
@@ -34,10 +36,12 @@ from extensions.sd_dreambooth_extension.dreambooth.utils import cleanup, list_fe
 from extensions.sd_dreambooth_extension.lora_diffusion.lora import weight_apply_lora, inject_trainable_lora, \
     save_lora_weight
 
+import boto3
 
 pil_features = list_features()
 mem_record = {}
 with_prior = False
+s3_client = boto3.client('s3')
 
 torch.backends.cudnn.benchmark = False
 
@@ -50,6 +54,56 @@ logger.setLevel(logging.DEBUG)
 dl.set_verbosity_error()
 
 
+
+def quick_upload_s3(models_path):
+    print('begin quick upload s3 , skip tgz')
+    account_id = boto3.client('sts').get_caller_identity().get('Account')
+    region_name= os.environ.get('region',None)
+    if region_name is None:
+        region_name = boto3.session.Session().region_name
+    if region_name is None :
+        region_name='us-east-1'
+    sm_env= json.loads(os.environ.get('SM_TRAINING_ENV','{}'))
+    job_name = sm_env.get('job_name',None) 
+    if job_name is None:
+        job_name=str(uuid.uuid4())
+    upload_path=f's3://sagemaker-{region_name}-{account_id}/dreambooth/model/{job_name}/'
+    command = f"/opt/conda/bin/s5cmd sync /opt/ml/model/ {upload_path}"
+    subprocess.run(command, shell=True)
+    print(f"begain s3 copy ,cmd: {command}")
+    command = f"rm -rf /opt/ml/model/*"
+    subprocess.run(command, shell=True)
+    print('clear /opt/ml/model')
+
+    with open('/opt/ml/model/model.txt', 'w') as fp:
+        fp.write(f'{upload_path}')
+    
+    
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+
+
+def upload_single_file(src_local_path, dest_s3_path):
+    """
+    上传单个文件
+    :param src_local_path:
+    :param dest_s3_path:
+    :return:
+    """
+    bucket_name,dest_s3_path=get_bucket_and_key(dest_s3_path)
+    try:
+        with open(src_local_path, 'rb') as f:
+            s3_client.upload_fileobj(f, bucket_name, dest_s3_path)
+    except Exception as e:
+        print(f'Upload data failed. | src: {src_local_path} | dest: {dest_s3_path} | Exception: {e}')
+        return False
+    print(f'Uploading file successful. | src: {src_local_path} | dest: {dest_s3_path}')
+    
+    
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision):
     text_encoder_config = PretrainedConfig.from_pretrained(
         pretrained_model_name_or_path,
@@ -956,6 +1010,8 @@ def main(args, memory_record, use_subdir, lora_model=None, lora_alpha=1.0, lora_
                         else:
                             out_file = None
                             s_pipeline.save_pretrained(args.models_path)
+                            
+                            
 
                             #compile_checkpoint('/opt/ml/model/',args.models_path,None,args.model_name, half=args.half_model, use_subdir=use_subdir,
                             #                   reload_models=False, lora_path=out_file, log=False,
@@ -1206,3 +1262,5 @@ def main(args, memory_record, use_subdir, lora_model=None, lora_alpha=1.0, lora_
 if __name__ == '__main__':
     args=parse_args(None)
     main(args=args, memory_record={}, use_subdir=False, lora_model=None, lora_alpha=1.0, lora_txt_alpha=1.0, custom_model_name="")
+    quick_upload_s3(args.models_path)
+    
