@@ -27,6 +27,10 @@ COPY ./sd_code/ /opt/ml/code/
 
 RUN pip install -r /opt/ml/code/extensions/sd_dreambooth_extension/requirements.txt
 
+#install s5cmd
+RUN curl -L https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz | tar -xz && mv s5cmd /opt/conda/bin/
+
+
 # this environment variable is used by the SageMaker training toolkit to determine our program entry point
 ENV SAGEMAKER_PROGRAM train_dreambooth.py
 

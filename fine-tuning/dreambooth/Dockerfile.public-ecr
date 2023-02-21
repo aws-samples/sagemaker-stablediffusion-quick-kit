@@ -1,0 +1,5 @@
+FROM public.ecr.aws/o7x6j3x6/sd-dreambooth-finetuning-v2
+
+
+COPY train_dreambooth.py /opt/ml/code/
+COPY ./sd_code/ /opt/ml/code/

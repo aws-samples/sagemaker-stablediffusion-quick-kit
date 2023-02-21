@@ -1,4 +1,4 @@
-algorithm_name=sd-dreambooth-finetuning
+algorithm_name=sd-dreambooth-finetuning-v2
 
 account=$(aws sts get-caller-identity --query Account --output text)
 
@@ -15,6 +15,10 @@ then
 aws ecr create-repository --repository-name "${algorithm_name}" > /dev/null
 fi
 
+#load public ECR image
+aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+docker pull public.ecr.aws/o7x6j3x6/sd-dreambooth-finetuning-v2
+
 # Log into Docker
 pwd=$(aws ecr get-login-password --region ${region})
 docker login --username AWS -p ${pwd} ${account}.dkr.ecr.${region}.amazonaws.com
@@ -24,7 +28,7 @@ docker login --username AWS -p ${pwd} ${account}.dkr.ecr.${region}.amazonaws.com
 mkdir -p ./sd_code/extensions
 cd ./sd_code/extensions/ && git clone https://github.com/qingyuan18/sd_dreambooth_extension.git
 cd ../../
-docker build -t ${algorithm_name}  ./ -f ./Dockerfile
+docker build -t ${algorithm_name}  ./ -f ./Dockerfile.public-ecr
 docker tag ${algorithm_name} ${fullname}
 docker push ${fullname}
 rm -rf ./sd_code
