@@ -16,7 +16,7 @@ aws ecr create-repository --repository-name "${algorithm_name}" > /dev/null
 fi
 
 #load public ECR image
-aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+#aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 docker pull public.ecr.aws/o7x6j3x6/sd-dreambooth-finetuning-v2
 
 # Log into Docker
