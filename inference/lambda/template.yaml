@@ -1,21 +1,13 @@
 AWSTemplateFormatVersion : '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Parameters:
-  VpcId:
-      Type: AWS::EC2::VPC::Id
-      Default: "vpc-11111111"
-      Description: 'the vpc id to deploy ALB'
-  Subnets:
-    Type: List<AWS::EC2::Subnet::Id>
-    Default: 'subnet-11111111,subnet-22222222'
-    Description: 'the subnets ids to deploy ALB'
-  DDBTableName:
-    Type: String
-    Default: 'AIGC_CONFIG'
   SageMakerEndpoint:
     Type: String
     Default: 'AIGC-Quick-Kit-a93xxxc-xxb4-4xxx-84a0-5xxxxx1'
     Description: 'Sagemaker Endpoint Name'
+  DDBTableName:
+    Type: String
+    Default: 'AIGC_CONFIG'
 
 Resources:
   DDBTable:
@@ -38,7 +30,7 @@ Resources:
     DependsOn: DDBTable
     Properties:
       Handler: app.lambda_handler
-      Runtime: python3.8
+      Runtime: python3.9
       CodeUri: app/
       Environment:
         Variables:
@@ -46,8 +38,13 @@ Resources:
           SM_ENDPOINT: !Ref SageMakerEndpoint
           S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
           S3_PREFIX: 'stablediffusion/asyncinvoke'
-          CDN_BASE: !GetAtt CloudfrontDistribution.DomainName
-          DDB_TABLE: !Ref DDBTable 
+          DDB_TABLE: !Ref DDBTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: any
       Policies:
         # Give the Lambda service access to poll your DynamoDB, S3, SageMaker 
         - AmazonDynamoDBFullAccess
@@ -55,58 +52,7 @@ Resources:
         - AmazonS3FullAccess
         - AmazonSageMakerFullAccess
 
-  LoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Scheme: internet-facing 
-      Subnets: !Ref Subnets   
-      SecurityGroups:
-      - !Ref LoadBalancerSecurityGroup
 
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    DependsOn: StableDiffusionInferenceFunctionInvokePermission
-    Properties:
-      TargetType: lambda
-      Targets:
-      - Id: !GetAtt StableDiffusionInferenceFunction.Arn
-
-  HttpListener:
-    Type: 'AWS::ElasticLoadBalancingV2::Listener'
-    Properties:
-      DefaultActions:
-      - TargetGroupArn: !Ref TargetGroup
-        Type: forward
-      LoadBalancerArn: !Ref LoadBalancer
-      Port: 80
-      Protocol: HTTP
-
-  LoadBalancerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Allow http to client host
-      VpcId: !Ref VpcId
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        CidrIp: 0.0.0.0/0
-
-  StableDiffusionInferenceFunctionInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt StableDiffusionInferenceFunction.Arn
-      Action: 'lambda:InvokeFunction'
-      Principal: elasticloadbalancing.amazonaws.com
-
-  #如果只梆定第一个,WebConsole上看不见ALB Trigger
-  StableDiffusionInferenceFunctionInvokePermission2:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt StableDiffusionInferenceFunction.Arn
-      Action: 'lambda:InvokeFunction'
-      Principal: elasticloadbalancing.amazonaws.com
-      SourceArn: !Ref TargetGroup
 ##########################################################################
 #  CloudFront::CachePolicy                                               #
 ##########################################################################
@@ -164,10 +110,11 @@ Resources:
         HttpVersion: http2 
         Origins:
           - Id: APIOrigin
-            DomainName: !GetAtt LoadBalancer.DNSName
+            DomainName: !Sub "${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com"
             CustomOriginConfig:
-              HTTPSPort: 80
-              OriginProtocolPolicy: http-only
+              HTTPSPort: 443
+              OriginProtocolPolicy: match-viewer
+            OriginPath: /Prod
           - Id: S3Origin  
             DomainName: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}.s3.${AWS::Region}.amazonaws.com"
             S3OriginConfig:
@@ -188,7 +135,7 @@ Resources:
           Compress: true
           ViewerProtocolPolicy: allow-all
           TargetOriginId: APIOrigin
-          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          CachePolicyId: !Ref 3hCachePolicy
         CacheBehaviors:
           - PathPattern: "/stablediffusion/*"
             AllowedMethods:
@@ -222,9 +169,9 @@ Resources:
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
 
 Outputs:
-  LoadBalancerDNSNAme:
-    Value: !GetAtt LoadBalancer.DNSName
   DistributionDomainName:
     Description: "Distribution domain name"
     Value: !GetAtt CloudfrontDistribution.DomainName
-    
+  InvokeApi:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
