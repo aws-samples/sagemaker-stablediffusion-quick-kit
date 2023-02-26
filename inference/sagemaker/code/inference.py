@@ -30,6 +30,8 @@ import sagemaker
 import torch
 import s3fs
 
+from PIL import Image
+
 
 from torch import autocast
 from diffusers import StableDiffusionPipeline,StableDiffusionImg2ImgPipeline
@@ -45,6 +47,7 @@ max_width = os.environ.get("max_width", 768)
 max_steps = os.environ.get("max_steps", 100)
 max_count = os.environ.get("max_count", 4)
 s3_bucket = os.environ.get("s3_bucket", "")
+watermarket=os.environ.get("watermarket", True)
 custom_region = os.environ.get("custom_region", None)
 safety_checker_enable = json.loads(os.environ.get("safety_checker_enable", "false"))
 altCLIP =os.environ.get("altCLIP", None)
@@ -259,12 +262,26 @@ def predict_fn(input_data, model):
             else:
                 images = model(input_data["prompt"], image=init_img, negative_prompt=input_data["negative_prompt"],
                                num_inference_steps=input_data["steps"], num_images_per_prompt=input_data["count"], generator=generator).images
+             # image watermark
+            if watermarket:
+                crop_image = Image.open("/opt/ml/model/sagemaker-logo-small.png")
+                size = (200, 39)
+                crop_image.thumbnail(size)
+                if crop_image.mode != "RGBA":
+                    crop_image = crop_image.convert("RGBA")
+                layer = Image.new("RGBA",[input_data["width"],input_data["height"]],(0,0,0,0))
+                layer.paste(crop_image,(input_data["width"]-210, input_data["height"]-49))
+            
             for image in images:
                 bucket, key = get_bucket_and_key(output_s3uri)
                 key = f'{key}{uuid.uuid4()}.jpg'
                 buf = io.BytesIO()
-                image.save(buf, format='JPEG')
-                print(key, buf)
+                if watermarket:
+                    out = Image.composite(layer,image,layer)
+                    out.save(buf, format='JPEG')
+                else:
+                    image.save(buf, format='JPEG')
+                
                 s3_client.put_object(
                     Body=buf.getvalue(),
                     Bucket=bucket,
