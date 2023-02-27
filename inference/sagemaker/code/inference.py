@@ -48,6 +48,7 @@ max_steps = os.environ.get("max_steps", 100)
 max_count = os.environ.get("max_count", 4)
 s3_bucket = os.environ.get("s3_bucket", "")
 watermarket=os.environ.get("watermarket", True)
+watermarket_image=os.environ.get("watermarket_image", "sagemaker-logo-small.png")
 custom_region = os.environ.get("custom_region", None)
 safety_checker_enable = json.loads(os.environ.get("safety_checker_enable", "false"))
 altCLIP =os.environ.get("altCLIP", None)
@@ -264,7 +265,7 @@ def predict_fn(input_data, model):
                                num_inference_steps=input_data["steps"], num_images_per_prompt=input_data["count"], generator=generator).images
              # image watermark
             if watermarket:
-                crop_image = Image.open("/opt/ml/model/sagemaker-logo-small.png")
+                crop_image = Image.open(f"/opt/ml/model/{watermarket_image}")
                 size = (200, 39)
                 crop_image.thumbnail(size)
                 if crop_image.mode != "RGBA":
