@@ -107,7 +107,7 @@ Resources:
       DistributionConfig:
         PriceClass: PriceClass_100
         IPV6Enabled: true
-        HttpVersion: http2 
+        HttpVersion: http2
         Origins:
           - Id: APIOrigin
             DomainName: !Sub "${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com"
