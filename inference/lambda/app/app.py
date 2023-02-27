@@ -36,11 +36,9 @@ SM_REGION=os.environ.get("SM_REGION") if os.environ.get("SM_REGION")!="" else CU
 SM_ENDPOINT=os.environ.get("SM_ENDPOINT",None) #SM_ENDPORT NAME
 S3_BUCKET=os.environ.get("S3_BUCKET","")
 S3_PREFIX=os.environ.get("S3_PREFIX","stablediffusion/asyncinvoke")
-CDN_BASE=os.environ.get("CDN_BASE","") #cloudfront base uri
+
 DDB_TABLE=os.environ.get("DDB_TABLE","") #dynamodb table name
 
-if CDN_BASE.startswith("https") is False:
-    CDN_BASE=f'https://{CDN_BASE}'
 
 print(f"CURRENT_REGION |{CURRENT_REGION}|")
 print(f"SM_REGION |{SM_REGION}|")
@@ -48,7 +46,7 @@ print(f"SM_ENDPOINT |{SM_ENDPOINT}|")
 
 print(f"S3_BUCKET |{S3_BUCKET}|")
 print(f"S3_PREFIX |{S3_PREFIX}|")
-print(f"CDN_BASE |{CDN_BASE}|")
+
 
 
 sagemaker_runtime = boto3.client("sagemaker-runtime", region_name=SM_REGION)
@@ -123,8 +121,7 @@ def get_async_inference_out_file(output_location):
         value = obj_bytes.get()['Body'].read()
         data = json.loads(value)
         images=data['result']
-        if CDN_BASE!="":
-            images=[x.replace(f"s3://{S3_BUCKET}",f"{CDN_BASE}") for x in images]
+        images=[x.replace(f"s3://{S3_BUCKET}",f"") for x in images]
         return {"status":"completed", "images":images}
     except ClientError as ex:
         if ex.response["Error"]["Code"] == "NoSuchKey":
