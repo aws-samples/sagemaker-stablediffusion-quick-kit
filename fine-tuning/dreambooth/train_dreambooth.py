@@ -12,16 +12,18 @@ import json
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional
-
+import uuid
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
+
 from accelerate import Accelerator
 from diffusers import AutoencoderKL, DDIMScheduler, DiffusionPipeline, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from diffusers.utils import logging as dl
 from huggingface_hub import HfFolder, whoami
 from torch.utils.data import Dataset
+from torch import autocast
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig, CLIPTextModel
 
@@ -38,6 +40,9 @@ from extensions.sd_dreambooth_extension.lora_diffusion.lora import weight_apply_
 
 import boto3
 
+from torch import autocast
+from diffusers import StableDiffusionPipeline, EulerAncestralDiscreteScheduler
+
 pil_features = list_features()
 mem_record = {}
 with_prior = False
@@ -53,7 +58,36 @@ logger.addHandler(console)
 logger.setLevel(logging.DEBUG)
 dl.set_verbosity_error()
 
+def inference_samples(prompt):
+    scheduler = EulerAncestralDiscreteScheduler()
+    pipe = StableDiffusionPipeline.from_pretrained("/opt/ml/model", scheduler=scheduler, safety_checker=None, torch_dtype=torch.float16).to("cuda")
+    g_cuda = None
+    g_cuda = torch.Generator(device='cuda')
+    seed = 1024 
+    g_cuda.manual_seed(seed)
+    num_samples = 5
+    guidance_scale = 7.5
+    num_inference_steps = 20 
+    height = 512 
+    width = 512 
+    
+    with autocast("cuda"), torch.inference_mode():
+        images = pipe(
+            prompt,
+            height=height,
+            width=width,
+            negative_prompt="",
+            num_images_per_prompt=num_samples,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            generator=g_cuda
+        ).images
 
+    count=1
+    for img in images:
+        img.save(f"/opt/ml/model/samples/sample-{count}.jpg")
+        count=count+1
+        
 
 def quick_upload_s3(models_path):
     print('begin quick upload s3 , skip tgz')
@@ -73,7 +107,9 @@ def quick_upload_s3(models_path):
     print(f"begain s3 copy ,cmd: {command}")
     command = f"rm -rf /opt/ml/model/*"
     subprocess.run(command, shell=True)
+    print('=======================================')
     print('clear /opt/ml/model')
+    print(f'model path: {upload_path}')
 
     with open('/opt/ml/model/model.txt', 'w') as fp:
         fp.write(f'{upload_path}')
@@ -1262,5 +1298,6 @@ def main(args, memory_record, use_subdir, lora_model=None, lora_alpha=1.0, lora_
 if __name__ == '__main__':
     args=parse_args(None)
     main(args=args, memory_record={}, use_subdir=False, lora_model=None, lora_alpha=1.0, lora_txt_alpha=1.0, custom_model_name="")
+    inference_samples(args.instance_prompt)
     quick_upload_s3(args.models_path)
     
