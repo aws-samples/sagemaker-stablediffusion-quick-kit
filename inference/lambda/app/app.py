@@ -33,7 +33,6 @@ CURRENT_REGION= boto3.session.Session().region_name
 
 
 SM_REGION=os.environ.get("SM_REGION") if os.environ.get("SM_REGION")!="" else CURRENT_REGION
-SM_ENDPOINT=os.environ.get("SM_ENDPOINT",None) #SM_ENDPORT NAME
 S3_BUCKET=os.environ.get("S3_BUCKET","")
 S3_PREFIX=os.environ.get("S3_PREFIX","stablediffusion/asyncinvoke")
 
@@ -42,8 +41,6 @@ DDB_TABLE=os.environ.get("DDB_TABLE","") #dynamodb table name
 
 print(f"CURRENT_REGION |{CURRENT_REGION}|")
 print(f"SM_REGION |{SM_REGION}|")
-print(f"SM_ENDPOINT |{SM_ENDPOINT}|")
-
 print(f"S3_BUCKET |{S3_BUCKET}|")
 print(f"S3_PREFIX |{S3_PREFIX}|")
 
