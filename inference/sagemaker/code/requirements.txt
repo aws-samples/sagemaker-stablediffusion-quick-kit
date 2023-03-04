@@ -10,3 +10,6 @@ k_diffusion
 omegaconf
 imwatermark
 sentencepiece
+deepspeed==0.7.4
+ninja
+triton==2.0.0.dev20221120

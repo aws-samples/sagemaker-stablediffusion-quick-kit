@@ -29,6 +29,7 @@ import boto3
 import sagemaker
 import torch
 import s3fs
+import deepspeed
 
 from PIL import Image
 
@@ -153,6 +154,19 @@ def model_fn(model_dir):
         model.safety_checker=None
     model = model.to("cuda")
     model.enable_attention_slicing()
+    try:
+        print("begin load deepspeed....")
+        deepspeed.init_inference(
+            model=model,      # Transformers models
+            mp_size=1,        # Number of GPU
+            dtype=torch.float16, # dtype of the weights (fp16)
+            replace_method="auto", # Lets DS autmatically identify the layer to replace
+            replace_with_kernel_inject=False, # replace the model with the kernel injector
+        )
+        print("model accelarate with deepspeed!")
+    except Exception as e:
+        print("deepspeed accelarate excpetion!")
+        print(e)
 
     return model
 
