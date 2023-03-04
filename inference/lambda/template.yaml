@@ -1,10 +1,6 @@
 AWSTemplateFormatVersion : '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Parameters:
-  SageMakerEndpoint:
-    Type: String
-    Default: 'AIGC-Quick-Kit-a93xxxc-xxb4-4xxx-84a0-5xxxxx1'
-    Description: 'Sagemaker Endpoint Name'
   DDBTableName:
     Type: String
     Default: 'AIGC_CONFIG'
@@ -35,7 +31,7 @@ Resources:
       Environment:
         Variables:
           SM_REGION: !Sub '${AWS::Region}'
-          SM_ENDPOINT: !Ref SageMakerEndpoint
+          # SM_ENDPOINT: !Ref SageMakerEndpoint
           S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
           S3_PREFIX: 'stablediffusion/asyncinvoke'
           DDB_TABLE: !Ref DDBTable
