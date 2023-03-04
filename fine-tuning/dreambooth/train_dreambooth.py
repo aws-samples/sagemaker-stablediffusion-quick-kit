@@ -7,21 +7,23 @@ import os
 import random
 import time
 import traceback
+import subprocess
+import json
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional
-import boto3
-from botocore.exceptions import NoCredentialsError
-
+import uuid
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
+
 from accelerate import Accelerator
 from diffusers import AutoencoderKL, DDIMScheduler, DiffusionPipeline, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from diffusers.utils import logging as dl
 from huggingface_hub import HfFolder, whoami
 from torch.utils.data import Dataset
+from torch import autocast
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig, CLIPTextModel
 
@@ -36,6 +38,10 @@ from extensions.sd_dreambooth_extension.dreambooth.utils import cleanup, list_fe
 from extensions.sd_dreambooth_extension.lora_diffusion.lora import weight_apply_lora, inject_trainable_lora, \
     save_lora_weight
 
+import boto3
+
+from torch import autocast
+from diffusers import StableDiffusionPipeline, EulerAncestralDiscreteScheduler
 
 pil_features = list_features()
 mem_record = {}
@@ -52,7 +58,63 @@ logger.addHandler(console)
 logger.setLevel(logging.DEBUG)
 dl.set_verbosity_error()
 
+def inference_samples(prompt):
+    scheduler = EulerAncestralDiscreteScheduler()
+    pipe = StableDiffusionPipeline.from_pretrained("/opt/ml/model", scheduler=scheduler, safety_checker=None, torch_dtype=torch.float16).to("cuda")
+    g_cuda = None
+    g_cuda = torch.Generator(device='cuda')
+    seed = 1024 
+    g_cuda.manual_seed(seed)
+    num_samples = 5
+    guidance_scale = 7.5
+    num_inference_steps = 20 
+    height = 512 
+    width = 512 
+    
+    with autocast("cuda"), torch.inference_mode():
+        images = pipe(
+            prompt,
+            height=height,
+            width=width,
+            negative_prompt="",
+            num_images_per_prompt=num_samples,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            generator=g_cuda
+        ).images
 
+    count=1
+    for img in images:
+        img.save(f"/opt/ml/model/samples/sample-{count}.jpg")
+        count=count+1
+        
+
+def quick_upload_s3(models_path):
+    print('begin quick upload s3 , skip tgz')
+    account_id = boto3.client('sts').get_caller_identity().get('Account')
+    region_name= os.environ.get('region',None)
+    if region_name is None:
+        region_name = boto3.session.Session().region_name
+    if region_name is None :
+        region_name='us-east-1'
+    sm_env= json.loads(os.environ.get('SM_TRAINING_ENV','{}'))
+    job_name = sm_env.get('job_name',None) 
+    if job_name is None:
+        job_name=str(uuid.uuid4())
+    upload_path=f's3://sagemaker-{region_name}-{account_id}/dreambooth/model/{job_name}/'
+    command = f"/opt/conda/bin/s5cmd sync /opt/ml/model/ {upload_path}"
+    subprocess.run(command, shell=True)
+    print(f"begain s3 copy ,cmd: {command}")
+    command = f"rm -rf /opt/ml/model/*"
+    subprocess.run(command, shell=True)
+    print('=======================================')
+    print('clear /opt/ml/model')
+    print(f'model path: {upload_path}')
+
+    with open('/opt/ml/model/model.txt', 'w') as fp:
+        fp.write(f'{upload_path}')
+    
+    
 def get_bucket_and_key(s3uri):
     pos = s3uri.find('/', 5)
     bucket = s3uri[5 : pos]
@@ -60,17 +122,6 @@ def get_bucket_and_key(s3uri):
     return bucket, key
 
 
-def upload_directory_to_s3(local_directory, dest_s3_path):
-    bucket,s3_prefix=get_bucket_and_key(dest_s3_path)
-    for root, dirs, files in os.walk(local_directory):
-        for filename in files:
-            local_path = os.path.join(root, filename)
-            relative_path = os.path.relpath(local_path, local_directory)
-            s3_path = os.path.join(s3_prefix, relative_path).replace("\\", "/")
-            s3_client.upload_file(local_path, bucket, s3_path)
-            print(f'File {local_path} uploaded to s3://{bucket}/{s3_path}')
-        for subdir in dirs:
-            upload_directory_to_s3(local_directory+"/"+subdir,dest_s3_path+"/"+subdir)
 
 def upload_single_file(src_local_path, dest_s3_path):
     """
@@ -87,23 +138,8 @@ def upload_single_file(src_local_path, dest_s3_path):
         print(f'Upload data failed. | src: {src_local_path} | dest: {dest_s3_path} | Exception: {e}')
         return False
     print(f'Uploading file successful. | src: {src_local_path} | dest: {dest_s3_path}')
-
-
-def upload_files(path_local, path_s3):
-    """
-    上传（重复上传覆盖同名文件）
-    :param path_local: 本地路径
-    :param path_s3: s3路径
-    """
-    print(f'Start upload files.')
-
-    if not upload_single_file(path_local, path_s3):
-        print(f'Upload files failed.')
-
-    print(f'Upload files successful.')
-
-
-
+    
+    
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision):
     text_encoder_config = PretrainedConfig.from_pretrained(
         pretrained_model_name_or_path,
@@ -126,13 +162,6 @@ def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: st
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
-    parser.add_argument(
-            "--manul_upload_model_path",
-            type=str,
-            default=None,
-            required=True,
-            help="manually upload model folder files into s3 path.",
-    )
     parser.add_argument(
             "--model_name",
             type=str,
@@ -444,7 +473,7 @@ def parse_args(input_args=None):
         with open(args.concepts_list, "r") as f:
             args.concepts_list = json.load(f)
 
-    print(args.__dict__)
+    print(args.__dict__)        
     return args
 
 
@@ -1017,11 +1046,8 @@ def main(args, memory_record, use_subdir, lora_model=None, lora_alpha=1.0, lora_
                         else:
                             out_file = None
                             s_pipeline.save_pretrained(args.models_path)
-
-                            ###  manually upload trained db model dirs to s3 path#####
-                            #### to eliminate sagemaker tar process#####
-                            print(f"manul_upload_model_path is {args.manul_upload_model_path}")
-                            upload_directory_to_s3(args.models_path,args.manul_upload_model_path)
+                            
+                            
 
                             #compile_checkpoint('/opt/ml/model/',args.models_path,None,args.model_name, half=args.half_model, use_subdir=use_subdir,
                             #                   reload_models=False, lora_path=out_file, log=False,
@@ -1272,3 +1298,6 @@ def main(args, memory_record, use_subdir, lora_model=None, lora_alpha=1.0, lora_
 if __name__ == '__main__':
     args=parse_args(None)
     main(args=args, memory_record={}, use_subdir=False, lora_model=None, lora_alpha=1.0, lora_txt_alpha=1.0, custom_model_name="")
+    inference_samples(args.instance_prompt)
+    quick_upload_s3(args.models_path)
+    
