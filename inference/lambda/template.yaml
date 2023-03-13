@@ -5,6 +5,19 @@ Parameters:
     Type: String
     Default: 'AIGC_CONFIG'
 
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: aigc-day-stable-diffusion
+    Description: AIGC Day Workshop Stable Diffusion App
+    Author: Changyue
+    SpdxLicenseId: Apache-2.0
+    LicenseUrl: LICENSE
+    ReadmeUrl: README.md
+    Labels: ['AIGC']
+    HomePageUrl: https://github.com/aws-samples/sagemaker-stablediffusion-quick-kit/tree/main/inference/lambda
+    SemanticVersion: 0.1.1
+    SourceCodeUrl: https://github.com/aws-samples/sagemaker-stablediffusion-quick-kit/tree/main/inference/lambda
+
 Resources:
   DDBTable:
     Type: AWS::DynamoDB::Table
@@ -37,8 +50,9 @@ Resources:
           DDB_TABLE: !Ref DDBTable
       Events:
         ApiEvent:
-          Type: Api
+          Type: HttpApi
           Properties:
+            PayloadFormatVersion: "1.0"
             Path: /{proxy+}
             Method: any
       Policies:
@@ -106,11 +120,10 @@ Resources:
         HttpVersion: http2
         Origins:
           - Id: APIOrigin
-            DomainName: !Sub "${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com"
+            DomainName: !Sub "${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
             CustomOriginConfig:
               HTTPSPort: 443
-              OriginProtocolPolicy: match-viewer
-            OriginPath: /Prod
+              OriginProtocolPolicy: https-only
           - Id: S3Origin  
             DomainName: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}.s3.${AWS::Region}.amazonaws.com"
             S3OriginConfig:
@@ -170,4 +183,4 @@ Outputs:
     Value: !GetAtt CloudfrontDistribution.DomainName
   InvokeApi:
     Description: "API Gateway endpoint URL"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
