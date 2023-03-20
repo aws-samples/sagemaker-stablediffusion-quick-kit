@@ -1,0 +1,12 @@
+[general]
+shuffle_caption = true
+caption_extension = '.txt'
+keep_tokens = 1
+
+[[datasets]]
+resolution = [768, 768]
+batch_size = 2
+
+  [[datasets.subsets]]
+  image_dir = '/opt/ml/input/data/images/'
+  #metadata_file = '/opt/ml/input/data/images/metadata.jsonl'
