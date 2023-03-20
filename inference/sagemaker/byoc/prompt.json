@@ -1,0 +1,12 @@
+{
+                "prompt": "taylor swift, best quality, extremely detailed",
+                "negative_prompt":"monochrome, lowres, bad anatomy, worst quality, low quality",
+                "steps":20,
+                "sampler":"euler_a",
+                "seed":43768,
+                "height": 512, 
+                "width": 512,
+                "count":2,
+                "control_net_model":"canny",
+                "input_image":"https://hf.co/datasets/huggingface/documentation-images/resolve/main/diffusers/input_image_vermeer.png"
+}
