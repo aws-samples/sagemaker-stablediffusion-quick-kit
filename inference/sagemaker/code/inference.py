@@ -155,7 +155,7 @@ def model_fn(model_dir):
 
     try:
         print("begin load deepspeed....")
-        model=deepspeed.init_inference(
+        deepspeed.init_inference(
             model=getattr(model,"model", model),      # Transformers models
             mp_size=1,        # Number of GPU
             dtype=torch.float16, # dtype of the weights (fp16)
