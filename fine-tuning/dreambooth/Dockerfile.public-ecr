@@ -1,6 +1,10 @@
 FROM public.ecr.aws/o7x6j3x6/sd-dreambooth-finetuning-v2
 
 
+#downgrade diffusers 0.10.0, fix  forward_xformers() got an unexpected keyword argument 'encoder_hidden_states'
+RUN sed -i 's/diffusers.pipelines.pipeline_utils/diffusers.pipeline_utils/g' /opt/ml/code/extensions/sd_dreambooth_extension/dreambooth/xattention.py
+
+
 RUN curl -L https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz | tar -xz && mv s5cmd /opt/conda/bin/
 
 RUN mkdir -p /opt/ml/input/data/images
