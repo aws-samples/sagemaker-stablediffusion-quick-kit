@@ -55,11 +55,11 @@ def answer(text, sample=True, top_p=0.45, temperature=0.7,model=None):
 
 def model_fn(model_dir):
     """
-    Load the model for inference,load model from os.environ['model_name'],diffult use stabilityai/stable-diffusion-2
+    Load the model for inference,load model from os.environ['model_name'],default use stabilityai/stable-diffusion-2
     
     """
     print("=================model_fn=================")
-    model = T5ForConditionalGeneration.from_pretrained("ClueAI/ChatYuan-large-v1")
+    model = T5ForConditionalGeneration.from_pretrained("ClueAI/ChatYuan-large-v2")
     model = model.to("cuda")
     return model
 
