@@ -4,7 +4,9 @@ Parameters:
   DDBTableName:
     Type: String
     Default: 'AIGC_CONFIG'
-
+  S3PREFIX:
+    Type: String
+    Default: 'stablediffusion/asyncinvoke'
 Metadata:
   AWS::ServerlessRepo::Application:
     Name: aigc-day-stable-diffusion
@@ -15,7 +17,7 @@ Metadata:
     ReadmeUrl: README.md
     Labels: ['AIGC']
     HomePageUrl: https://github.com/aws-samples/sagemaker-stablediffusion-quick-kit/tree/main/inference/lambda
-    SemanticVersion: 0.1.1
+    SemanticVersion: 0.2.0
     SourceCodeUrl: https://github.com/aws-samples/sagemaker-stablediffusion-quick-kit/tree/main/inference/lambda
 
 Resources:
@@ -34,20 +36,12 @@ Resources:
           KeyType: "HASH"
         - AttributeName: "SM_ENDPOINT"
           KeyType: "RANGE"
-  StableDiffusionInferenceFunction:
+  InvokeFunction:
     Type: AWS::Serverless::Function
-    DependsOn: DDBTable
     Properties:
-      Handler: app.lambda_handler
-      Runtime: python3.9
-      CodeUri: app/
-      Environment:
-        Variables:
-          SM_REGION: !Sub '${AWS::Region}'
-          # SM_ENDPOINT: !Ref SageMakerEndpoint
-          S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
-          S3_PREFIX: 'stablediffusion/asyncinvoke'
-          DDB_TABLE: !Ref DDBTable
+      PackageType: Image
+      Architectures:
+        - x86_64
       Events:
         ApiEvent:
           Type: HttpApi
@@ -55,12 +49,23 @@ Resources:
             PayloadFormatVersion: "1.0"
             Path: /{proxy+}
             Method: any
+      Environment:
+        Variables:
+          SM_REGION: !Sub '${AWS::Region}'
+          S3_BUCKET: !Sub "sagemaker-${AWS::Region}-${AWS::AccountId}"
+          S3_PREFIX: !Ref S3PREFIX
+          DDB_TABLE: !Ref DDBTableName
       Policies:
-        # Give the Lambda service access to poll your DynamoDB, S3, SageMaker 
-        - AmazonDynamoDBFullAccess
+        # Give the Lambda service access to poll your S3, SageMaker, DynamoDB
         - AWSLambdaExecute
         - AmazonS3FullAccess
         - AmazonSageMakerFullAccess
+        - AmazonDynamoDBFullAccess
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./
+      DockerTag: aigc-app
+
 
 
 ##########################################################################
