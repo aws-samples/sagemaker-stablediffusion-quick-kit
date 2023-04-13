@@ -19,24 +19,24 @@ import uuid
 import os
 import urllib
 import boto3
-from json import JSONEncoder
 from botocore.exceptions import ClientError
-from fastapi import FastAPI, Request, UploadFile
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from pprint import pprint
+import base64
+from fastapi.middleware.cors import CORSMiddleware
 
-class Prompt(BaseModel):
-    prompt: str
-    negative_prompt: str | None = ""
-    steps: int
-    sampler: str
-    seed: int
-    height: int 
-    width: int
-    count: int
-    image_url: str | None
 
 app = FastAPI()
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 CURRENT_REGION= boto3.session.Session().region_name
@@ -73,9 +73,9 @@ class APIconfig:
     def __repr__(self):
         return f"APIconfig<{self.label} -- {self.sm_endpoint}>"
 
-class APIConfigEncoder(JSONEncoder):
-        def default(self, o):
-            return o.__dict__
+# class APIConfigEncoder(JSONEncoder):
+#         def default(self, o):
+#             return o.__dict__
 
 def get_s3_uri(bucket, prefix):
     """
@@ -119,7 +119,6 @@ def async_inference(input_location,sm_endpoint=None):
             InputLocation=input_location)
     return response["ResponseMetadata"]["HTTPStatusCode"], response.get("OutputLocation",'')
 
-
 def get_async_inference_out_file(output_location):
     """
     :param output_locaiton: async inference s3 output location
@@ -142,28 +141,6 @@ def get_async_inference_out_file(output_location):
             return {"status":"Failed", "msg":"have other issue, please contact site admin"}
 
 
-def result_json(status_code,body,cls=None):
-    """
-    :param status_code: return http status code
-    :param body: return body  
-    """
-    if cls != None:
-        body=json.dumps(body,cls=cls)
-    else:
-        body = json.dumps(body)
-    return {
-        'statusCode': status_code,
-        'isBase64Encoded': False,
-        'headers': {
-            'Content-Type': 'application/json',
-            'access-control-allow-origin': '*',
-            'access-control-allow-methods': '*',
-            'access-control-allow-headers': '*'
-            
-        },
-        'body': body
-    }
-
 
 @app.get("/")
 def read_root():
@@ -171,7 +148,19 @@ def read_root():
 
 @app.options("/")
 def options():
-    return result_json(200,[])
+    return {}
+
+
+class Prompt(BaseModel):
+    prompt: str
+    negative_prompt: str | None = ""
+    steps: int
+    sampler: str
+    seed: int
+    height: int 
+    width: int
+    count: int
+    image_url: str | None
 
 @app.post("/async_hander")
 def async_handler(prompt: Prompt, request: Request):
@@ -187,7 +176,7 @@ def async_handler(prompt: Prompt, request: Request):
         if len(configs)>0:
             sm_endpoint=configs[0].sm_endpoint
         else:
-             return result_json(400,{"msg":"not found SageMaker Endpoint"})
+             return {"msg":"not found SageMaker Endpoint"}
         
     input_file=str(uuid.uuid4())+".json"
     s3_resource = boto3.resource('s3')
@@ -198,48 +187,55 @@ def async_handler(prompt: Prompt, request: Request):
     print(f'input_location: s3://{S3_BUCKET}/{S3_PREFIX}/input/{input_file}')
     status_code, output_location=async_inference(f's3://{S3_BUCKET}/{S3_PREFIX}/input/{input_file}',sm_endpoint)
     status_code=200 if status_code==202 else 403
-    return result_json(status_code,{"task_id":os.path.basename(output_location).split('.')[0]})
-
+    return {"task_id":os.path.basename(output_location).split('.')[0]}
 
 @app.get("/config")
 def config():
     items=search_item(DDB_TABLE, "APIConfig", "")
     configs=[APIconfig(item) for item in items]
-    return result_json(200,configs,cls=APIConfigEncoder)
-
+    # return result_json(200,configs,cls=APIConfigEncoder)
+    return configs
 
 @app.get("/task/{task_id}")
 def task(task_id: str):
     result=get_async_inference_out_file(f"s3://{S3_BUCKET}/{S3_PREFIX}/out/{task_id}.out")
     status_code=200 if result.get("status")=="completed" else 204
-    return result_json(status_code,result)
+    return result
 
 
 class Token(BaseModel):
     token: str
+
 @app.post('/auth')
 def auth(token: Token):
     token = json.loads(token.json())['token']
     if token== GALLERY_ADMIN_TOKEN:
-        return result_json(200,{'msg':"ok"})
-    else:
-        return result_json(401,{'msg':"auth"})
+        return {'msg':"ok"}
 
+
+class CustomFile(BaseModel):
+    imageName: str
+    imageData: str
 
 @app.post('/upload_handler')
-async def upload(file: UploadFile):
-    # body = await request.body()
-    # body = json.loads(body)
-    content_type = file.content_type
-
-    file_name = file.filename
-    object_name = f"stablediffusion/upload/{str(uuid.uuid4())}." + file_name.split('.')[-1]
-    file_content = await file.read()
-
+def upload(file: CustomFile):
+    body = json.loads(file.json())
+    
+    file_content = base64.b64decode(body["imageData"])
+    
+    if "jpg" in body["imageName"] or "jpeg" in body["imageName"] :
+        file_name=f"stablediffusion/upload/{str(uuid.uuid4())}.jpg"
+        content_type="image/jpeg"
+    else:
+        file_name=f"stablediffusion/upload/{str(uuid.uuid4())}.png"
+        content_type="image/png"
+    # 保存文件到S3存储桶
     s3_client.put_object(
         Bucket=S3_BUCKET,
-        Key=object_name,
+        Key=file_name,
         Body=file_content,
         ContentType=content_type
     )
-    return result_json(200,{"upload_file":file_name, "object_name": object_name})
+    return {"upload_file": file_name}
+
+
