@@ -21,6 +21,7 @@ import io
 import sys
 import tarfile
 import traceback
+import uuid
 
 from PIL import Image
 
@@ -32,11 +33,13 @@ import s3fs
 
 from PIL import Image
 
-
+from collections import defaultdict
 from torch import autocast
 from diffusers import StableDiffusionPipeline,StableDiffusionImg2ImgPipeline
 from diffusers import AltDiffusionPipeline, AltDiffusionImg2ImgPipeline
 from diffusers import EulerDiscreteScheduler, EulerAncestralDiscreteScheduler, HeunDiscreteScheduler, LMSDiscreteScheduler, KDPM2DiscreteScheduler, KDPM2AncestralDiscreteScheduler,DDIMScheduler
+
+from safetensors.torch import load_file, save_file
 
 
 s3_client = boto3.client('s3')
@@ -51,7 +54,9 @@ watermarket=os.environ.get("watermarket", True)
 watermarket_image=os.environ.get("watermarket_image", "sagemaker-logo-small.png")
 custom_region = os.environ.get("custom_region", None)
 safety_checker_enable = json.loads(os.environ.get("safety_checker_enable", "false"))
-altCLIP =os.environ.get("altCLIP", None)
+
+#add lora support
+lora_model = os.environ.get("lora_model", None)
 
 # need add more sampler
 samplers = {
@@ -64,6 +69,10 @@ samplers = {
     "ddim": DDIMScheduler
 }
 
+
+
+
+  
 
 def get_bucket_and_key(s3uri):
     """
@@ -88,17 +97,72 @@ def untar(fname, dirs):
         print(e)
         return False
 
-def init_pipeline(model_name: str,model_args=None):
+def load_lora_weights(pipeline, checkpoint_path, multiplier, device, dtype):
+    LORA_PREFIX_UNET = "lora_unet"
+    LORA_PREFIX_TEXT_ENCODER = "lora_te"
+    # load LoRA weight from .safetensors
+    state_dict = load_file(checkpoint_path)
+
+    updates = defaultdict(dict)
+    for key, value in state_dict.items():
+        # it is suggested to print out the key, it usually will be something like below
+        # "lora_te_text_model_encoder_layers_0_self_attn_k_proj.lora_down.weight"
+
+        layer, elem = key.split('.', 1)
+        updates[layer][elem] = value
+
+    # directly update weight in diffusers model
+    for layer, elems in updates.items():
+
+        if "text" in layer:
+            layer_infos = layer.split(LORA_PREFIX_TEXT_ENCODER + "_")[-1].split("_")
+            curr_layer = pipeline.text_encoder
+        else:
+            layer_infos = layer.split(LORA_PREFIX_UNET + "_")[-1].split("_")
+            curr_layer = pipeline.unet
+
+        # find the target layer
+        temp_name = layer_infos.pop(0)
+        while len(layer_infos) > -1:
+            try:
+                curr_layer = curr_layer.__getattr__(temp_name)
+                if len(layer_infos) > 0:
+                    temp_name = layer_infos.pop(0)
+                elif len(layer_infos) == 0:
+                    break
+            except Exception:
+                if len(temp_name) > 0:
+                    temp_name += "_" + layer_infos.pop(0)
+                else:
+                    temp_name = layer_infos.pop(0)
+
+        # get elements for this layer
+        weight_up = elems['lora_up.weight'].to(dtype)
+        weight_down = elems['lora_down.weight'].to(dtype)
+        alpha = elems['alpha']
+        if alpha:
+            alpha = alpha.item() / weight_up.shape[1]
+        else:
+            alpha = 1.0
+
+        # update weight
+        if len(weight_up.shape) == 4:
+            curr_layer.weight.data += multiplier * alpha * torch.mm(weight_up.squeeze(3).squeeze(2), weight_down.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+        else:
+            curr_layer.weight.data += multiplier * alpha * torch.mm(weight_up, weight_down)
+
+    return pipeline
+
+
+def init_pipeline(model_name: str,model_args=None,lora_model=None):
     """
     help load model from s3
     """
-    print(f"=================init_pipeline:{model_name}=================")
-    if altCLIP is not None:
-        print("Use AltCLIP and BAAI/AltDiffusion-m9")
-        return AltDiffusionPipeline.from_pretrained("BAAI/AltDiffusion-m9")
+    print(f"=================init_pipeline: base_model:{model_name}, lora_model:{lora_model}=================")
+    
     model_path=model_name
     base_name=os.path.basename(model_name)
-    try:
+    try:    
         if model_name.startswith("s3://"):
             fs = s3fs.S3FileSystem()
             if base_name=="model.tar.gz":
@@ -120,9 +184,34 @@ def init_pipeline(model_name: str,model_args=None):
 
         print(f"pretrained model_path: {model_path}")
         if model_args is not None:
-            return StableDiffusionPipeline.from_pretrained(
+            pipe=StableDiffusionPipeline.from_pretrained(
                  model_path, **model_args)
-        return StableDiffusionPipeline.from_pretrained(model_path)
+        else:
+            pipe=StableDiffusionPipeline.from_pretrained(model_path)
+        
+        #lora model support
+        if lora_model is not None:
+            if lora_model.startswith("s3://") and '.safetensors' in lora_model:
+                fs = s3fs.S3FileSystem()
+                _dir_path=str(uuid.uuid4())
+                local_lora_path= f"/tmp/{_dir_path}"
+                print(local_lora_path)
+                os.makedirs(local_lora_path)
+                fs.get(lora_model,local_lora_path+"/")
+                print(f"download and {lora_model} to {local_lora_path}  completed")
+                local_lora_file=local_lora_path+"/"+os.path.basename(lora_model)
+                state_dict = load_file(local_lora_file)
+                pipe = load_lora_weights(pipe, local_lora_file, 0.5, 'cuda:0', torch.float16)
+            
+            #TODO support https://   
+            #elif lora_model.startswith("https://") and '.safetensors' in lora_model:
+                    
+            else:
+                #use huggingface lora
+                pipe.unet.load_attn_procs(lora_model)
+               
+                
+        return pipe
     except Exception as ex:
         traceback.print_exc(file=sys.stdout)
         print(f"=================Exception================={ex}")
@@ -138,6 +227,8 @@ def model_fn(model_dir):
     model_name = os.environ.get("model_name", "stabilityai/stable-diffusion-2")
     model_args = json.loads(os.environ['model_args']) if (
         'model_args' in os.environ) else None
+    lora_model = os.environ.get("lora_model", None)
+    
     task = os.environ['task'] if ('task' in os.environ) else "text-to-image"
     print(
         f'model_name: {model_name},  model_args: {model_args}, task: {task} ')
@@ -146,7 +237,7 @@ def model_fn(model_dir):
     torch.backends.cuda.matmul.allow_tf32 = True
 
    
-    model = init_pipeline(model_name,model_args)
+    model = init_pipeline(model_name,model_args=model_args,lora_model=lora_model)
     
     if safety_checker_enable is False :
         #model.safety_checker = lambda images, clip_input: (images, False)
@@ -246,10 +337,8 @@ def predict_fn(input_data, model):
             init_img = Image.open(io.BytesIO(response.content)).convert("RGB")
             init_img = init_img.resize(
                 (input_data["width"], input_data["height"]))
-            if altCLIP is None:
-                model = StableDiffusionImg2ImgPipeline(**model.components)  # need use Img2ImgPipeline
-            else:
-                model = AltDiffusionImg2ImgPipeline(**model.components) #need use AltDiffusionImg2ImgPipeline
+            model = StableDiffusionImg2ImgPipeline(**model.components)  # need use Img2ImgPipeline
+            
 
         generator = torch.Generator(
             device='cuda').manual_seed(input_data["seed"])
@@ -290,7 +379,7 @@ def predict_fn(input_data, model):
                     ContentType='image/jpeg',
                     Metadata={
                         # #s3 metadata only support ascii
-                        "prompt": input_data["prompt"] if (altCLIP is None) else "AltCLIP prompt",
+                        "prompt": input_data["prompt"],
                         "seed": str(input_data["seed"])
                     }
                 )
