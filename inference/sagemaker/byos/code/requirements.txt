@@ -1,11 +1,12 @@
-diffusers
+diffusers==0.14.0
+safetensors
 transformers
 ftfy
 spacy
 boto3
 sagemaker
 nvgpu
-s3fs
+s3fs==2023.3.0
 k_diffusion
 omegaconf
 imwatermark
