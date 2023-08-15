@@ -9,6 +9,7 @@ import traceback
 from PIL import Image
 
 import torch
+
 from transformers import pipeline as depth_pipeline
 from diffusers.utils import load_image
 from controlnet_aux import OpenposeDetector,MLSDdetector,HEDdetector,HEDdetector
@@ -31,13 +32,19 @@ control_net_postfix=[
                                     "scribble"
                                 ]
 
-
+control_net_postfix_v1_1=[
+                                    "canny",
+                                    "depth",
+                                    "mlsd",
+                                    "openpose",
+                                    "scribble"
+                                ]
 
 class ControlNetDectecProcessor:
     def __init__(self):
-        self.openpose = OpenposeDetector.from_pretrained('lllyasviel/ControlNet')
-        self.mlsd = MLSDdetector.from_pretrained('lllyasviel/ControlNet')
-        self.hed = HEDdetector.from_pretrained('lllyasviel/ControlNet')
+        self.openpose = OpenposeDetector.from_pretrained('lllyasviel/Annotators')
+        self.mlsd = MLSDdetector.from_pretrained('lllyasviel/Annotators')
+        self.hed = HEDdetector.from_pretrained('lllyasviel/Annotators')
         self.depth= depth_pipeline('depth-estimation')
         
     
@@ -97,6 +104,21 @@ def init_control_net_model():
                             )
     print(f"init_control_net_model:{control_net_postfix} completed")
     
+
+    
+def init_control_net_model_v1_1():
+    print(f"init_control_net_model_v1_1:{control_net_postfix_v1_1} begain")
+    for model in control_net_postfix_v1_1:
+        if "depth" in model:
+            controlnet = ControlNetModel.from_pretrained(
+                                    f"lllyasviel/control_v11f1p_sd15_{model}", torch_dtype=torch.float16
+                            )
+        else:
+            controlnet = ControlNetModel.from_pretrained(
+                                    f"lllyasviel/control_v11p_sd15_{model}", torch_dtype=torch.float16
+                            )
+    print(f"init_control_net_model_v1_1:{control_net_postfix} completed")
+    
 def init_control_net_pipeline(base_model,control_net_model):
     if control_net_model not in control_net_postfix:
             return None
@@ -109,9 +131,28 @@ def init_control_net_pipeline(base_model,control_net_model):
                                 )
     pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
-
-        
     
     return pipe
         
+
+def init_control_net_pipeline_v1_1(base_model,control_net_model):
+    if control_net_model not in control_net_postfix_v1_1:
+            return None
+    
+    if "depth" in control_net_model:
+        controlnet = ControlNetModel.from_pretrained(
+                                    f"lllyasviel/control_v11f1p_sd15_{control_net_model}", torch_dtype=torch.float16
+                            )
+    else:
+        controlnet = ControlNetModel.from_pretrained(
+                                    f"lllyasviel/control_v11p_sd15_{control_net_model}", torch_dtype=torch.float16
+                            )
+    
+    pipe = StableDiffusionControlNetPipeline.from_pretrained(
+                                base_model, controlnet=controlnet, safety_checker=None, torch_dtype=torch.float16
+                                )
+    pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
+
+    
+    return pipe
     

@@ -49,9 +49,8 @@ import cv2
 import numpy as np
 
 #load utils and controle_net
-from utils import quick_download_s3,get_bucket_and_key,untar
-from control_net import ControlNetDectecProcessor,init_control_net_pipeline,init_control_net_model
-
+from utils import download_model,write_imgage_to_s3,get_bucket_and_key
+from control_net import ControlNetDectecProcessor,init_control_net_pipeline,init_control_net_pipeline_v1_1,init_control_net_model,init_control_net_model_v1_1
 
 
 s3_client = boto3.client('s3')
@@ -67,6 +66,7 @@ watermarket_image=os.environ.get("watermarket_image", "sagemaker-logo-small.png"
 custom_region = os.environ.get("custom_region", None)
 safety_checker_enable = json.loads(os.environ.get("safety_checker_enable", "false"))
 control_net_enable=os.environ.get("control_net_enable", "enable")
+control_net_version=os.environ.get("control_net_version","v1.1")
 deepspeed_enable=os.environ.get("deepspeed", False)
 
 DEFAULT_MODEL="runwayml/stable-diffusion-v1-5"
@@ -88,6 +88,13 @@ control_net_postfix=[
     "scribble"
 ]
 
+
+#warm control net 
+if control_net_enable=="enable":
+    if control_net_version=="v1.1":
+        init_control_net_model_v1_1()
+    else:
+        init_control_net_model()
 
 
 controle_net_cache={}
@@ -367,8 +374,13 @@ def predict_fn(input_data, model):
             else:
                 if control_net_enable:
                     model_name = os.environ.get("model_name", DEFAULT_MODEL)
-                    pipe=init_control_net_pipeline(model_name,input_data["control_net_model"])    
-                    pipe.enable_model_cpu_offload()
+                    if control_net_version=="v1.1":
+                        pipe=init_control_net_pipeline_v1_1(model_name,input_data["control_net_model"])    
+                        pipe.enable_model_cpu_offload()
+                    else:
+                        pipe=init_control_net_pipeline(model_name,input_data["control_net_model"])    
+                        pipe.enable_model_cpu_offload()
+                
                     images = pipe(input_data["prompt"], image=control_net_input_image, negative_prompt=input_data["negative_prompt"],
                                num_inference_steps=input_data["steps"], generator=generator).images
                     grid_images=[]
