@@ -160,7 +160,7 @@ class Prompt(BaseModel):
     height: int 
     width: int
     count: int
-    image_url: str | None
+    image_url: str | None = ""
 
 @app.post("/async_hander")
 def async_handler(prompt: Prompt, request: Request):
