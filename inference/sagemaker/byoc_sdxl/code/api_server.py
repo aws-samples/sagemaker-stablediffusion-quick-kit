@@ -16,9 +16,10 @@
 
 """Module start FastAPI Server."""
 
-from fastapi import FastAPI,Request
+from fastapi import FastAPI, Request
+from pydantic import parse_obj_as
 
-from inference import predict_fn,prepare_opt
+from inference import predict_fn, InferenceOpt
 
 app = FastAPI()
 
@@ -34,7 +35,7 @@ async def ping():
 @app.get("/api/v1")
 async def version():
     """
-    version /,/api/v1 show version
+    version /api/v1 show version
     """
     return {"server": "StableDiffusionQuickKit","version":"v1.0.0"}
 
@@ -46,14 +47,7 @@ async def invocations(request: Request):
     invocations, invoke SD model
     """
     body=await request.json()
-    result=inference_fn(body)
-    return result
-
-
-def inference_fn(data):
-    """
-    inference_fn , wrapper func
-    """
-    data=prepare_opt(data)
-    model=None
-    return {'result':predict_fn(data,model)}
+    print(f"invocations {body=}")
+    opt=parse_obj_as(InferenceOpt,body)
+    print(f"invocations {opt=}")
+    return {'result':predict_fn(opt)}

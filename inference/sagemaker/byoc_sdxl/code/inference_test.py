@@ -1,9 +1,13 @@
 import os
-import diffusers
 
-from inference import model_fn,predict_fn,prepare_opt
+from pydantic import parse_obj_as
 
-os.environ['s3_bucket']='sagemaker-us-east-1-596030579944'
+
+from inference import predict_fn, InferenceOpt
+
+s3_bucket=os.environ.get('s3_bucket','')
+if s3_bucket=="":
+    raise Exception("need setup s3_bucket")
 
 
 inputs={
@@ -82,32 +86,35 @@ inputs={
                     "input_image":"https://huggingface.co/lllyasviel/sd-controlnet-scribble/resolve/main/images/bag.png"
                 },
     "SDXL":  {
-                    "prompt": "a fantasy creaturefractal dragon",
-                    "steps":20,
-                    "sampler":"euler_a",
-                    "seed":43768,
-                    "count":1,
-                    "control_net_enable":"disable",
-                    "SDXL_REFINER":"disable",
-                    "lora_name":"dragon",
-                    "lora_url":"https://civitai.com/api/download/models/129363"
-                    
-                }
+                "prompt": "aerial view, a futuristic research complex in a bright foggy jungle, hard lighting",
+                "steps":20,
+                "sampler":"euler_a",
+                "count":1,
+                "control_net_enable":"enable",
+                "sdxl_refiner":"enable",
+                "control_net_model":"depth",
+                "input_image":"https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main/sd_controlnet/hf-logo.png"
+            },
+    "SDXL_CN":  {
+                "prompt": "aerial view, a futuristic research complex in a bright foggy jungle, hard lighting",
+                "steps":20,
+                "sampler":"euler_a",
+                "count":1,
+                "control_net_enable":"enable",
+                "sdxl_refiner":"enable",
+                "control_net_model":"depth",
+                "input_image":"https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main/sd_controlnet/hf-logo.png"
+            }
 }           
 
 
 
-model=model_fn(".")
 
-def test_model_fn():    
-    assert isinstance(model,diffusers.DiffusionPipeline)
-    
-    
 
 def test_sdxl_predict():
     assert inputs.get("SDXL",None) is not None
-    data=prepare_opt(inputs.get("SDXL",None))
-    predict_fn(data,model)
+    data=parse_obj_as(InferenceOpt,inputs.get("SDXL",None))
+    predict_fn(data)
     
 
 

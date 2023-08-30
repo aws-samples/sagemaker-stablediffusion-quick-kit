@@ -20,7 +20,9 @@ import shutil
 
 from utils import quick_download_s3,get_bucket_and_key,untar
 
-s3_bucket=os.environ.get("s3_bucket","sagemaker-us-east-1-1111111111")
+s3_bucket=os.environ.get('s3_bucket','')
+if s3_bucket=="":
+    raise Exception("need setup s3_bucket")
 
 def test_get_bucket_and_key():
     """

@@ -14,9 +14,10 @@ from transformers import pipeline as depth_pipeline
 from diffusers.utils import load_image
 from controlnet_aux import OpenposeDetector,MLSDdetector,HEDdetector,HEDdetector
 
-from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
+from diffusers import StableDiffusionControlNetPipeline, ControlNetModel,AutoencoderKL
 from diffusers import UniPCMultistepScheduler
 
+from diffusers import StableDiffusionXLControlNetPipeline
 
 
 import cv2
@@ -40,12 +41,20 @@ control_net_postfix_v1_1=[
                                     "scribble"
                                 ]
 
+sdxl_control_net_postfix_v1=[
+                                    "canny",
+                                    "depth"
+                                ]
+
+
+
 class ControlNetDectecProcessor:
-    def __init__(self):
+    def __init__(self,size=None):
         self.openpose = OpenposeDetector.from_pretrained('lllyasviel/Annotators')
         self.mlsd = MLSDdetector.from_pretrained('lllyasviel/Annotators')
         self.hed = HEDdetector.from_pretrained('lllyasviel/Annotators')
         self.depth= depth_pipeline('depth-estimation')
+        self.size=size
         
     
     def detect_process(self,model_name,image_url):
@@ -82,6 +91,9 @@ class ControlNetDectecProcessor:
         depth_image = depth_image[:, :, None]
         depth_image = np.concatenate([depth_image, depth_image, depth_image], axis=2)
         depth_image = Image.fromarray(depth_image)
+        print(f"{self.size=}")
+        if self.size is not None:
+            depth_image = depth_image.resize(self.size)
         return depth_image
 
     def get_canny_image(self,image_url):
@@ -93,6 +105,8 @@ class ControlNetDectecProcessor:
         image = image[:, :, None]
         image = np.concatenate([image, image, image], axis=2)
         canny_image = Image.fromarray(image)
+        if self.size is not None:
+            canny_image = canny_image.resize(self.size)
         return canny_image
 
 
@@ -106,6 +120,7 @@ def init_control_net_model():
     
 
     
+    
 def init_control_net_model_v1_1():
     print(f"init_control_net_model_v1_1:{control_net_postfix_v1_1} begain")
     for model in control_net_postfix_v1_1:
@@ -118,6 +133,17 @@ def init_control_net_model_v1_1():
                                     f"lllyasviel/control_v11p_sd15_{model}", torch_dtype=torch.float16
                             )
     print(f"init_control_net_model_v1_1:{control_net_postfix} completed")
+    
+    
+def init_sdxl_control_net_model():
+    print(f"init_sdxl_control_net_model:{sdxl_control_net_postfix_v1} begain")
+    for model in sdxl_control_net_postfix_v1:
+        controlnet = ControlNetModel.from_pretrained(
+                                    f"diffusers/controlnet-{model}-sdxl-1.0-small", torch_dtype=torch.float16
+                            )
+    print(f"init_sdxl_control_net_model:{sdxl_control_net_postfix_v1} completed")
+    
+    
     
 def init_control_net_pipeline(base_model,control_net_model):
     if control_net_model not in control_net_postfix:
@@ -154,5 +180,23 @@ def init_control_net_pipeline_v1_1(base_model,control_net_model):
     pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
     
+    return pipe
+    
+def init_sdxl_control_net_pipeline(base_model,control_net_model):
+    controlnet = ControlNetModel.from_pretrained(
+            f"diffusers/controlnet-{control_net_model}-sdxl-1.0-small",
+            variant="fp16",
+            use_safetensors=True,
+            torch_dtype=torch.float16,
+        ).to("cuda")
+    vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16).to("cuda")
+    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+            base_model,
+            controlnet=controlnet,
+            vae=vae,
+            variant="fp16",
+            use_safetensors=True,
+            torch_dtype=torch.float16,
+        ).to("cuda")
     return pipe
     
